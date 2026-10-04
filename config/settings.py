@@ -1,0 +1,36 @@
+# ==============================================================
+# CONFIGURACIÓN GENERAL
+# ==============================================================
+
+APP_NAME = "Interfaz de Balanza"
+
+# ==============================================================
+# SERIAL
+# ==============================================================
+
+BAUDRATE_BALANZA_DEFAULT = 9600
+BAUDRATE_DISPLAY_DEFAULT = 9600
+
+BYTESIZE_DEFAULT = 8
+PARITY_DEFAULT = "N"
+STOPBITS_DEFAULT = 1
+
+DTR_DEFAULT = True
+RTS_DEFAULT = True
+
+# ==============================================================
+# TIEMPOS
+# ==============================================================
+
+INTERVALO_LECTURA_MS = 400
+
+TIMEOUT_INICIO_MS = 5000
+
+SERIAL_TIMEOUT = 0.1
+
+# ==============================================================
+# PUERTOS POR DEFECTO
+# ==============================================================
+
+PUERTO_BALANZA_DEFAULT = "COM5"
+PUERTO_DISPLAY_DEFAULT = "COM6"
