@@ -1,37 +1,54 @@
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QKeySequence, QColor
 from PyQt6.QtWidgets import (
     QMainWindow,
+    QDialog,
     QWidget,
+    QScrollArea,
     QLabel,
     QPushButton,
     QComboBox,
     QSpinBox,
+    QLineEdit,
     QPlainTextEdit,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QAbstractItemView,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QGroupBox,
     QFormLayout,
     QFrame,
     QStatusBar,
+    QMessageBox,
+)
+
+from config.settings import (
+    APP_NAME,
+    BAUDRATE_BALANZA_DEFAULT,
+    BAUDRATE_DISPLAY_DEFAULT,
 )
 
 
-# ==========================================================
-# ESTILO GENERAL
-# ==========================================================
+# Poner en False para que los campos salgan vacíos
+MOSTRAR_DATOS_DEMO = True
 
+# ESTILO GENERAL
 ESTILO = """
 QMainWindow,
+QDialog,
+QScrollArea,
 QWidget#central {
     background-color: #f3f4f6;
 }
 
+QScrollArea {
+    border: none;
+}
 
-/* ==========================================================
-   MENÚ
-   ========================================================== */
-
+/* ---------------- MENÚ ---------------- */
 QMenuBar {
     background-color: #ffffff;
     border-bottom: 1px solid #d1d5db;
@@ -71,17 +88,13 @@ QMenu::separator {
     margin: 4px 8px;
 }
 
-
-/* ==========================================================
-   GRUPOS
-   ========================================================== */
-
+/* ---------------- GRUPOS ---------------- */
 QGroupBox {
     background-color: #ffffff;
     border: 1px solid #d1d5db;
     border-radius: 8px;
-    margin-top: 12px;
-    padding: 12px;
+    margin-top: 14px;
+    padding: 16px 12px 10px 12px;
     font-weight: bold;
 }
 
@@ -92,72 +105,14 @@ QGroupBox::title {
     color: #374151;
 }
 
-
-/* ==========================================================
-   BOTONES
-   ========================================================== */
-
-QPushButton {
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 6px 14px;
-    background-color: #ffffff;
+/* ---------------- ETIQUETAS ---------------- */
+QLabel#etiqueta {
+    color: #374151;
+    font-weight: 600;
 }
 
-QPushButton:hover {
-    background-color: #eff6ff;
-}
-
-QPushButton:disabled {
-    color: #9ca3af;
-    background-color: #f3f4f6;
-}
-
-
-/* BOTÓN INICIAR */
-
-QPushButton#btn_iniciar {
-    background-color: #16a34a;
-    border: none;
-    color: white;
-    font-size: 15px;
-    font-weight: bold;
-}
-
-QPushButton#btn_iniciar:hover {
-    background-color: #15803d;
-}
-
-QPushButton#btn_iniciar:disabled {
-    background-color: #d1d5db;
-    color: #6b7280;
-}
-
-
-/* BOTÓN DETENER */
-
-QPushButton#btn_detener {
-    background-color: #dc2626;
-    border: none;
-    color: white;
-    font-size: 15px;
-    font-weight: bold;
-}
-
-QPushButton#btn_detener:hover {
-    background-color: #b91c1c;
-}
-
-QPushButton#btn_detener:disabled {
-    background-color: #d1d5db;
-    color: #6b7280;
-}
-
-
-/* ==========================================================
-   CAMPOS
-   ========================================================== */
-
+/* ---------------- CAMPOS ---------------- */
+QLineEdit,
 QComboBox,
 QSpinBox {
     border: 1px solid #d1d5db;
@@ -167,11 +122,145 @@ QSpinBox {
     min-height: 24px;
 }
 
+QLineEdit:focus,
+QComboBox:focus,
+QSpinBox:focus {
+    border: 1px solid #2563eb;
+}
 
-/* ==========================================================
-   LOG
-   ========================================================== */
+QLineEdit[readOnly="true"] {
+    background-color: #f3f4f6;
+    color: #374151;
+    font-weight: bold;
+}
 
+/* ---------------- BOTONES ---------------- */
+QPushButton {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 7px 14px;
+    background-color: #ffffff;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #eff6ff;
+    border-color: #93c5fd;
+}
+
+QPushButton:pressed {
+    background-color: #dbeafe;
+}
+
+QPushButton:disabled {
+    color: #9ca3af;
+    background-color: #f3f4f6;
+}
+
+QPushButton#btn_iniciar,
+QPushButton#btn_detener,
+QPushButton#btn_guardar,
+QPushButton#btn_capturar,
+QPushButton#btn_pendientes {
+    border: none;
+    color: white;
+    font-weight: bold;
+}
+
+QPushButton#btn_iniciar {
+    background-color: #16a34a;
+    font-size: 14px;
+}
+
+QPushButton#btn_iniciar:hover {
+    background-color: #15803d;
+}
+
+QPushButton#btn_detener {
+    background-color: #dc2626;
+    font-size: 14px;
+}
+
+QPushButton#btn_detener:hover {
+    background-color: #b91c1c;
+}
+
+QPushButton#btn_iniciar:disabled,
+QPushButton#btn_detener:disabled,
+QPushButton#btn_guardar:disabled,
+QPushButton#btn_capturar:disabled,
+QPushButton#btn_pendientes:disabled {
+    background-color: #d1d5db;
+    color: #6b7280;
+}
+
+QPushButton#btn_capturar {
+    background-color: #2563eb;
+    font-size: 18px;
+    padding: 12px 20px;
+}
+
+QPushButton#btn_capturar:hover {
+    background-color: #1d4ed8;
+}
+
+QPushButton#btn_capturar:pressed {
+    background-color: #1e40af;
+}
+
+QPushButton#btn_guardar {
+    background-color: #16a34a;
+    font-size: 15px;
+}
+
+QPushButton#btn_guardar:hover {
+    background-color: #15803d;
+}
+
+QPushButton#btn_pendientes {
+    background-color: #f59e0b;
+}
+
+QPushButton#btn_pendientes:hover {
+    background-color: #d97706;
+}
+
+/* ---------------- PESO ---------------- */
+QLabel#lbl_peso {
+    background-color: #0b1220;
+    color: #22ff88;
+    border: 3px solid #1f2937;
+    border-radius: 10px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 64px;
+    font-weight: bold;
+    padding: 10px;
+}
+
+/* ---------------- TABLA ---------------- */
+QTableWidget {
+    background-color: #ffffff;
+    alternate-background-color: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    gridline-color: #e5e7eb;
+    selection-background-color: #dbeafe;
+    selection-color: #111827;
+}
+
+QTableWidget::item {
+    padding: 4px;
+}
+
+QHeaderView::section {
+    background-color: #1f2937;
+    color: white;
+    padding: 6px;
+    border: none;
+    font-weight: bold;
+}
+
+/* ---------------- LOG ---------------- */
 QPlainTextEdit {
     background-color: #111827;
     color: #d1d5db;
@@ -180,11 +269,7 @@ QPlainTextEdit {
     font-size: 12px;
 }
 
-
-/* ==========================================================
-   BARRA DE ESTADO
-   ========================================================== */
-
+/* ---------------- BARRA DE ESTADO ---------------- */
 QStatusBar {
     background-color: #ffffff;
     border-top: 1px solid #d1d5db;
@@ -195,151 +280,174 @@ QStatusBar::item {
 }
 """
 
+# (texto, fondo, color texto, borde)
+ESTADOS_OPERACION = {
+    "proceso":   ("● EN PROCESO", "#eff6ff", "#1d4ed8", "#bfdbfe"),
+    "pendiente": ("● PENDIENTE",  "#fffbeb", "#b45309", "#fde68a"),
+    "completo":  ("● COMPLETO",   "#f0fdf4", "#15803d", "#bbf7d0"),
+    "error":     ("● ERROR",      "#fef2f2", "#b91c1c", "#fecaca"),
+}
 
-# ==========================================================
 # VISTA PRINCIPAL
-# ==========================================================
-
 class BalanzaView(QMainWindow):
 
+    # Se emite al cerrar la ventana (el controller puede conectarse
+    # para cerrar los puertos de forma ordenada)
+    cerrando = pyqtSignal()
+
     def __init__(self):
+
         super().__init__()
 
-        self.setWindowTitle("Interfaz de Balanza")
-        self.setMinimumWidth(640)
-        self.resize(680, 460)
+        self.setWindowTitle(APP_NAME)
+        self.setMinimumSize(1000, 600)
+        self.resize(1180, 720)
 
         self.setStyleSheet(ESTILO)
 
         self.crear_menu()
         self.crear_interfaz()
+        self.crear_configuracion_avanzada()
         self.crear_barra_estado()
 
-    # ======================================================
-    # BARRA DE MENÚ
-    # ======================================================
+        if MOSTRAR_DATOS_DEMO:
+            self._cargar_demo()
 
+    # HELPERS DE UI
+    @staticmethod
+    def _etiqueta(texto):
+
+        lbl = QLabel(texto)
+        lbl.setObjectName("etiqueta")
+
+        return lbl
+
+    @staticmethod
+    def _campo(texto="", centrado=False, solo_lectura=False):
+
+        campo = QLineEdit(texto)
+
+        if centrado:
+            campo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        if solo_lectura:
+            campo.setReadOnly(True)
+
+        return campo
+
+    def _fila(self, *items):
+        """
+        items: widgets, o tuplas (widget, stretch).
+        Devuelve un QWidget con los items en horizontal.
+        """
+
+        contenedor = QWidget()
+
+        layout = QHBoxLayout(contenedor)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        for item in items:
+
+            if isinstance(item, tuple):
+                layout.addWidget(item[0], item[1])
+            else:
+                layout.addWidget(item)
+
+        return contenedor
+
+    @staticmethod
+    def _boton(texto, alto=45, nombre=None):
+
+        btn = QPushButton(texto)
+
+        btn.setMinimumHeight(alto)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        if nombre:
+            btn.setObjectName(nombre)
+
+        return btn
+
+    # MENÚ
     def crear_menu(self):
 
         barra = self.menuBar()
 
-        # --------------------------------------------------
-        # ARCHIVO
-        # --------------------------------------------------
-
+        # ---------------- ARCHIVO ----------------
         menu_archivo = barra.addMenu("&Archivo")
 
-        self.act_salir = QAction(
-            "Salir",
-            self
-        )
+        self.act_salir = QAction("Salir", self)
+        self.act_salir.setShortcut(QKeySequence("Ctrl+Q"))
+        self.act_salir.triggered.connect(self.close)
 
-        self.act_salir.setShortcut(
-            QKeySequence("Ctrl+Q")
-        )
+        menu_archivo.addAction(self.act_salir)
 
-        self.act_salir.triggered.connect(
-            self.close
-        )
-
-        menu_archivo.addAction(
-            self.act_salir
-        )
-
-        # --------------------------------------------------
-        # CONFIGURACIÓN
-        # --------------------------------------------------
-
-        menu_config = barra.addMenu(
-            "&Configuración"
-        )
+        # ---------------- CONFIGURACIÓN ----------------
+        menu_config = barra.addMenu("&Configuración")
 
         self.act_configuracion = QAction(
             "Mostrar configuración avanzada",
             self
         )
+        self.act_configuracion.setCheckable(True)
+        self.act_configuracion.setShortcut(QKeySequence("Ctrl+,"))
 
-        self.act_configuracion.setCheckable(
-            True
-        )
-
-        self.act_configuracion.setShortcut(
-            QKeySequence("Ctrl+,")
-        )
-
-        menu_config.addAction(
-            self.act_configuracion
-        )
-
+        menu_config.addAction(self.act_configuracion)
         menu_config.addSeparator()
 
-        # --------------------------------------------------
-        # ACTUALIZAR PUERTOS
-        # --------------------------------------------------
+        self.act_actualizar_puertos = QAction("Actualizar puertos", self)
+        self.act_actualizar_puertos.setShortcut(QKeySequence("F5"))
 
-        self.act_actualizar_puertos = QAction(
-            "Actualizar puertos",
-            self
-        )
+        menu_config.addAction(self.act_actualizar_puertos)
 
-        self.act_actualizar_puertos.setShortcut(
-            QKeySequence("F5")
-        )
+        # ---------------- AYUDA ----------------
+        menu_ayuda = barra.addMenu("A&yuda")
 
-        menu_config.addAction(
-            self.act_actualizar_puertos
-        )
+        self.act_acerca = QAction("Acerca de", self)
+        self.act_acerca.triggered.connect(self.mostrar_acerca)
 
-        # --------------------------------------------------
-        # AYUDA
-        # --------------------------------------------------
+        menu_ayuda.addAction(self.act_acerca)
 
-        menu_ayuda = barra.addMenu(
-            "A&yuda"
-        )
-
-        self.act_acerca = QAction(
-            "Acerca de",
-            self
-        )
-
-        menu_ayuda.addAction(
-            self.act_acerca
-        )
-
-        # --------------------------------------------------
-        # CONEXIONES
-        # --------------------------------------------------
-
+        # ---------------- CONEXIONES ----------------
         self.act_configuracion.triggered.connect(
             self.mostrar_configuracion
         )
 
-    # ======================================================
-    # INTERFAZ
-    # ======================================================
-
+    # INTERFAZ PRINCIPAL
     def crear_interfaz(self):
+
+        # El contenido va dentro de un scroll: si la pantalla es
+        # pequeña (1366x768, 1024x768) nada queda cortado.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         central = QWidget()
         central.setObjectName("central")
 
-        self.setCentralWidget(
-            central
-        )
+        scroll.setWidget(central)
+        self.setCentralWidget(scroll)
 
-        # --------------------------------------------------
-        # TÍTULO
-        # --------------------------------------------------
+        principal = QVBoxLayout(central)
+        principal.setContentsMargins(14, 10, 14, 10)
+        principal.setSpacing(10)
 
-        self.lbl_titulo = QLabel(
-            "⚖ Interfaz de Balanza"
-        )
+        # BOTONES INICIAR / DETENER (conexión con la balanza)
+        self.btn_iniciar = self._boton("▶  Iniciar", 38, "btn_iniciar")
 
+        self.btn_detener = self._boton("■  Detener", 38, "btn_detener")
+        self.btn_detener.setEnabled(False)
+
+        # CABECERA
+        cabecera = QHBoxLayout()
+        cabecera.setSpacing(10)
+
+        self.lbl_titulo = QLabel("⚖  FORMATO DE PESAJE AUTOMATIZADO")
         self.lbl_titulo.setStyleSheet(
             """
             QLabel {
-                font-size: 24px;
+                font-size: 22px;
                 font-weight: bold;
                 color: #111827;
                 padding: 4px 0;
@@ -347,362 +455,382 @@ class BalanzaView(QMainWindow):
             """
         )
 
-        # --------------------------------------------------
-        # PESO
-        # --------------------------------------------------
-
-        grupo_peso = QGroupBox(
-            "Peso actual"
+        self.btn_pendientes = self._boton(
+            "📋  PESAJES PENDIENTES", 40, "btn_pendientes"
         )
 
-        self.lbl_peso = QLabel(
-            "---"
-        )
+        cabecera.addWidget(self.lbl_titulo)
+        cabecera.addStretch()
+        cabecera.addWidget(self.btn_iniciar)
+        cabecera.addWidget(self.btn_detener)
+        cabecera.addSpacing(16)
+        cabecera.addWidget(self.btn_pendientes)
 
-        self.lbl_peso.setAlignment(
+        principal.addLayout(cabecera)
+
+        # IDENTIFICACIÓN DE LA OPERACIÓN
+        grupo_ident = QGroupBox("Identificación de la operación")
+
+        lay_ident = QHBoxLayout(grupo_ident)
+        lay_ident.setSpacing(10)
+
+        self.txt_ticket = self._campo(centrado=True, solo_lectura=True)
+        self.txt_lote = self._campo(centrado=True)
+        self.txt_placa = self._campo(centrado=True)
+        self.txt_carreta = self._campo(centrado=True)
+
+        self.lbl_estado_operacion = QLabel()
+        self.lbl_estado_operacion.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
+        self.lbl_estado_operacion.setMinimumHeight(34)
 
-        self.lbl_peso.setMinimumHeight(
-            170
-        )
+        lay_ident.addWidget(self._etiqueta("Ticket:"))
+        lay_ident.addWidget(self.txt_ticket, 1)
+        lay_ident.addWidget(self._etiqueta("Lote:"))
+        lay_ident.addWidget(self.txt_lote, 1)
+        lay_ident.addWidget(self._etiqueta("Placa:"))
+        lay_ident.addWidget(self.txt_placa, 1)
+        lay_ident.addWidget(self._etiqueta("Carreta:"))
+        lay_ident.addWidget(self.txt_carreta, 1)
+        lay_ident.addWidget(self._etiqueta("Estado:"))
+        lay_ident.addWidget(self.lbl_estado_operacion, 1)
 
-        self.lbl_peso.setFrameShape(
-            QFrame.Shape.NoFrame
-        )
+        principal.addWidget(grupo_ident)
 
-        self.lbl_peso.setStyleSheet(
+        self.estado_operacion("proceso")
+
+        # ÁREA CENTRAL: DATOS (izq.) + PESO (der.)
+        operacion = QHBoxLayout()
+        operacion.setSpacing(12)
+
+        operacion.addWidget(self._crear_grupo_datos(), 3)
+        operacion.addWidget(self._crear_grupo_peso(), 2)
+
+        principal.addLayout(operacion, 1)
+
+        # TABLA DE PESAJES
+        principal.addWidget(self._crear_grupo_pesajes())
+
+        # BOTONES OPERATIVOS
+        acciones = QHBoxLayout()
+        acciones.setSpacing(10)
+
+        self.btn_nuevo = self._boton("＋  NUEVO")
+        self.btn_guardar = self._boton("💾  GUARDAR", 45, "btn_guardar")
+        self.btn_imprimir = self._boton("🖨  IMPRIMIR")
+        self.btn_modificar = self._boton("✎  MODIFICAR")
+        self.btn_salir = self._boton("🚪  SALIR")
+
+        self.btn_salir.clicked.connect(self.close)
+
+        acciones.addWidget(self.btn_nuevo)
+        acciones.addWidget(self.btn_guardar, 1)
+        acciones.addWidget(self.btn_imprimir)
+        acciones.addWidget(self.btn_modificar)
+        acciones.addStretch()
+        acciones.addWidget(self.btn_salir)
+
+        principal.addLayout(acciones)
+
+        # SINCRONIZAR "LOTE ACTUAL"
+        self.txt_lote.textChanged.connect(self._actualizar_lote_actual)
+
+    # GRUPO: DATOS DEL VEHÍCULO Y CARGA
+    def _crear_grupo_datos(self):
+
+        grupo = QGroupBox("Datos del vehículo y carga")
+
+        grid = QGridLayout(grupo)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(1, 1)
+
+        # Campos
+        self.txt_chofer = self._campo()
+        self.txt_brevete = self._campo()
+
+        self.txt_proveedor = self._campo()
+        self.txt_ruc_proveedor = self._campo()
+        self.txt_guia_proveedor = self._campo()
+
+        self.txt_transportista = self._campo()
+        self.txt_ruc_transportista = self._campo()
+        self.txt_guia_transportista = self._campo()
+
+        self.txt_concesion = self._campo()
+        self.txt_codigo = self._campo()
+
+        self.txt_procedencia = self._campo()
+        self.txt_producto = self._campo()
+
+        self.txt_observacion = self._campo()
+
+        filas = [
+            (
+                "Chofer:",
+                self._fila(
+                    (self.txt_chofer, 3),
+                    self._etiqueta("Brevete:"),
+                    (self.txt_brevete, 2),
+                ),
+            ),
+            (
+                "Proveedor:",
+                self._fila(
+                    (self.txt_proveedor, 5),
+                    self._etiqueta("RUC:"),
+                    (self.txt_ruc_proveedor, 2),
+                    self._etiqueta("Guía:"),
+                    (self.txt_guia_proveedor, 2),
+                ),
+            ),
+            (
+                "Transportista:",
+                self._fila(
+                    (self.txt_transportista, 5),
+                    self._etiqueta("RUC:"),
+                    (self.txt_ruc_transportista, 2),
+                    self._etiqueta("Guía:"),
+                    (self.txt_guia_transportista, 2),
+                ),
+            ),
+            (
+                "Concesión:",
+                self._fila(
+                    (self.txt_concesion, 4),
+                    self._etiqueta("Código:"),
+                    (self.txt_codigo, 2),
+                ),
+            ),
+            (
+                "Procedencia:",
+                self._fila(
+                    (self.txt_procedencia, 3),
+                    self._etiqueta("Producto:"),
+                    (self.txt_producto, 3),
+                ),
+            ),
+            (
+                "Observación:",
+                self.txt_observacion,
+            ),
+        ]
+
+        for fila, (texto, widget) in enumerate(filas):
+
+            etiqueta = self._etiqueta(texto)
+            etiqueta.setMinimumWidth(100)
+
+            grid.addWidget(etiqueta, fila, 0)
+            grid.addWidget(widget, fila, 1)
+
+        grid.setRowStretch(len(filas), 1)
+
+        return grupo
+
+    # GRUPO: PESO ACTUAL
+    def _crear_grupo_peso(self):
+
+        grupo = QGroupBox("Peso actual")
+
+        layout = QVBoxLayout(grupo)
+        layout.setSpacing(10)
+
+        self.lbl_peso = QLabel("---")
+        self.lbl_peso.setObjectName("lbl_peso")
+        self.lbl_peso.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_peso.setMinimumHeight(150)
+
+        lbl_info = QLabel("Lectura actual de la balanza")
+        lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_info.setStyleSheet(
             """
             QLabel {
-                background-color: #0b1220;
-                color: #22ff88;
-                border: 3px solid #1f2937;
-                border-radius: 10px;
-                font-family: Consolas, "Courier New", monospace;
-                font-size: 72px;
-                font-weight: bold;
-                padding: 10px;
+                color: #6b7280;
+                font-size: 13px;
+                font-weight: normal;
             }
             """
         )
 
-        layout_peso = QVBoxLayout()
-
-        layout_peso.addWidget(
-            self.lbl_peso
+        self.btn_capturar = self._boton(
+            "⚖  CAPTURAR PESO", 58, "btn_capturar"
         )
 
-        grupo_peso.setLayout(
-            layout_peso
+        self.lbl_lote_actual = QLabel("Lote actual: —")
+        self.lbl_lote_actual.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_lote_actual.setStyleSheet(
+            """
+            QLabel {
+                color: #374151;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 4px;
+            }
+            """
         )
 
-        # --------------------------------------------------
-        # BOTONES
-        # --------------------------------------------------
+        layout.addWidget(self.lbl_peso, 1)
+        layout.addWidget(lbl_info)
+        layout.addWidget(self.btn_capturar)
+        layout.addWidget(self.lbl_lote_actual)
 
-        self.btn_iniciar = QPushButton(
-            "▶  Iniciar"
+        return grupo
+    
+    # GRUPO: PESAJES DE LOS LOTES
+    def _crear_grupo_pesajes(self):
+
+        grupo = QGroupBox("Pesajes de los lotes")
+
+        layout = QVBoxLayout(grupo)
+
+        self.tabla_pesajes = QTableWidget()
+
+        self.tabla_pesajes.setColumnCount(8)
+        self.tabla_pesajes.setHorizontalHeaderLabels(
+            [
+                "LOTE",
+                "SACOS",
+                "1ª PESADA (FECHA / HORA)",
+                "1ª PESADA (kg)",
+                "2ª PESADA (FECHA / HORA)",
+                "2ª PESADA (kg)",
+                "PESO NETO (kg)",
+                "ESTADO",
+            ]
         )
 
-        self.btn_iniciar.setObjectName(
-            "btn_iniciar"
+        self.tabla_pesajes.verticalHeader().setVisible(False)
+        self.tabla_pesajes.verticalHeader().setDefaultSectionSize(30)
+
+        self.tabla_pesajes.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.tabla_pesajes.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.tabla_pesajes.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.tabla_pesajes.setAlternatingRowColors(True)
+        self.tabla_pesajes.setMinimumHeight(140)
+        self.tabla_pesajes.setMaximumHeight(190)
+
+        header = self.tabla_pesajes.horizontalHeader()
+        header.setStretchLastSection(False)
+
+        for col in range(8):
+            header.setSectionResizeMode(
+                col,
+                QHeaderView.ResizeMode.Stretch
+            )
+
+        header.setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
         )
 
-        self.btn_iniciar.setMinimumHeight(
-            48
+        header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
         )
 
-        self.btn_iniciar.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
+        layout.addWidget(self.tabla_pesajes)
 
-        self.btn_detener = QPushButton(
-            "■  Detener"
-        )
+        return grupo
 
-        self.btn_detener.setObjectName(
-            "btn_detener"
-        )
+    # CONFIGURACIÓN AVANZADA (ventana aparte, no modal)
+    def crear_configuracion_avanzada(self):
 
-        self.btn_detener.setMinimumHeight(
-            48
-        )
+        # Va en un diálogo propio: abrirla no cambia el tamaño de
+        # la ventana principal y el log sigue disponible mientras
+        # el sistema está funcionando.
 
-        self.btn_detener.setEnabled(
-            False
-        )
+        self.dlg_config = QDialog(self)
+        self.dlg_config.setWindowTitle("Configuración avanzada")
+        self.dlg_config.resize(780, 520)
 
-        self.btn_detener.setCursor(
-            Qt.CursorShape.PointingHandCursor
-        )
+        layout = QVBoxLayout(self.dlg_config)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
 
-        fila_botones = QHBoxLayout()
+        # ---------------- PUERTOS ----------------
+        grupo_puertos = QGroupBox("Puertos seriales")
 
-        fila_botones.setSpacing(
-            12
-        )
-
-        fila_botones.addWidget(
-            self.btn_iniciar
-        )
-
-        fila_botones.addWidget(
-            self.btn_detener
-        )
-
-        # --------------------------------------------------
-        # PUERTOS
-        # --------------------------------------------------
-
-        grupo_puertos = QGroupBox(
-            "Puertos seriales"
-        )
+        form_puertos = QFormLayout(grupo_puertos)
 
         self.cmb_balanza = QComboBox()
-
         self.cmb_display = QComboBox()
 
-        self.btn_actualizar = QPushButton(
-            "🔄  Actualizar puertos"
-        )
+        self.btn_actualizar = QPushButton("🔄  Actualizar puertos")
 
-        form_puertos = QFormLayout()
+        form_puertos.addRow("Entrada - Balanza:", self.cmb_balanza)
+        form_puertos.addRow("Salida - Display:", self.cmb_display)
+        form_puertos.addRow("", self.btn_actualizar)
 
-        form_puertos.addRow(
-            "Entrada - Balanza:",
-            self.cmb_balanza
-        )
+        # ---------------- SERIAL ----------------
+        grupo_serial = QGroupBox("Configuración serial")
 
-        form_puertos.addRow(
-            "Salida - Display:",
-            self.cmb_display
-        )
-
-        form_puertos.addRow(
-            "",
-            self.btn_actualizar
-        )
-
-        grupo_puertos.setLayout(
-            form_puertos
-        )
-
-        # --------------------------------------------------
-        # CONFIGURACIÓN SERIAL
-        # --------------------------------------------------
-
-        grupo_serial = QGroupBox(
-            "Configuración serial"
-        )
+        form_serial = QFormLayout(grupo_serial)
 
         self.spin_baudrate_balanza = QSpinBox()
-
-        self.spin_baudrate_balanza.setRange(
-            300,
-            115200
-        )
-
-        self.spin_baudrate_balanza.setValue(
-            9600
-        )
+        self.spin_baudrate_balanza.setRange(300, 115200)
+        self.spin_baudrate_balanza.setValue(BAUDRATE_BALANZA_DEFAULT)
 
         self.spin_baudrate_display = QSpinBox()
+        self.spin_baudrate_display.setRange(300, 115200)
+        self.spin_baudrate_display.setValue(BAUDRATE_DISPLAY_DEFAULT)
 
-        self.spin_baudrate_display.setRange(
-            300,
-            115200
-        )
+        form_serial.addRow("Balanza Baudrate:", self.spin_baudrate_balanza)
+        form_serial.addRow("Display Baudrate:", self.spin_baudrate_display)
 
-        self.spin_baudrate_display.setValue(
-            9600
-        )
+        fila = QHBoxLayout()
+        fila.setSpacing(10)
+        fila.addWidget(grupo_puertos, 1)
+        fila.addWidget(grupo_serial, 1)
 
-        form_serial = QFormLayout()
+        layout.addLayout(fila)
 
-        form_serial.addRow(
-            "Balanza Baudrate:",
-            self.spin_baudrate_balanza
-        )
+        # ---------------- LOG ----------------
+        grupo_log = QGroupBox("Detalles técnicos")
 
-        form_serial.addRow(
-            "Display Baudrate:",
-            self.spin_baudrate_display
-        )
-
-        grupo_serial.setLayout(
-            form_serial
-        )
-
-        # --------------------------------------------------
-        # LOG
-        # --------------------------------------------------
-
-        grupo_log = QGroupBox(
-            "Detalles técnicos"
-        )
+        lay_log = QVBoxLayout(grupo_log)
 
         self.txt_log = QPlainTextEdit()
+        self.txt_log.setReadOnly(True)
+        self.txt_log.setMaximumBlockCount(1000)
+        self.txt_log.setMinimumHeight(150)
 
-        self.txt_log.setReadOnly(
-            True
-        )
+        lay_log.addWidget(self.txt_log)
 
-        self.txt_log.setMinimumHeight(
-            120
-        )
+        layout.addWidget(grupo_log, 1)
 
-        layout_log = QVBoxLayout()
-
-        layout_log.addWidget(
-            self.txt_log
-        )
-
-        grupo_log.setLayout(
-            layout_log
-        )
-
-        # --------------------------------------------------
-        # CONFIGURACIÓN AVANZADA
-        # --------------------------------------------------
-
-        self.grupo_configuracion = QWidget()
-
-        layout_config = QVBoxLayout()
-
-        layout_config.setContentsMargins(
-            0,
-            0,
-            0,
-            0
-        )
-
-        layout_config.setSpacing(
-            10
-        )
-
-        # Puertos + Serial
-
-        fila_superior = QHBoxLayout()
-
-        fila_superior.setSpacing(
-            10
-        )
-
-        fila_superior.addWidget(
-            grupo_puertos,
-            1
-        )
-
-        fila_superior.addWidget(
-            grupo_serial,
-            1
-        )
-
-        layout_config.addLayout(
-            fila_superior
-        )
-
-        # Log
-
-        layout_config.addWidget(
-            grupo_log
-        )
-
-        self.grupo_configuracion.setLayout(
-            layout_config
-        )
-
-        self.grupo_configuracion.setVisible(
-            False
-        )
-
-        # --------------------------------------------------
-        # CONEXIÓN DEL MENÚ CON ACTUALIZAR
-        # --------------------------------------------------
-
+        # ---------------- CONEXIONES ----------------
         self.act_actualizar_puertos.triggered.connect(
             self.btn_actualizar.click
         )
 
-        # --------------------------------------------------
-        # LAYOUT PRINCIPAL
-        # --------------------------------------------------
-
-        layout = QVBoxLayout(
-            central
+        # Si el usuario cierra el diálogo con la X, sincroniza el menú
+        self.dlg_config.finished.connect(
+            lambda _codigo: self._sincronizar_accion_config(False)
         )
 
-        layout.setContentsMargins(
-            14,
-            10,
-            14,
-            10
-        )
-
-        layout.setSpacing(
-            12
-        )
-
-        layout.addWidget(
-            self.lbl_titulo
-        )
-
-        layout.addWidget(
-            grupo_peso
-        )
-
-        layout.addLayout(
-            fila_botones
-        )
-
-        layout.addWidget(
-            self.grupo_configuracion
-        )
-
-        layout.addStretch()
-
-    # ======================================================
     # BARRA DE ESTADO
-    # ======================================================
-
     def crear_barra_estado(self):
 
         barra = QStatusBar()
+        barra.setSizeGripEnabled(False)
 
-        barra.setSizeGripEnabled(
-            False
-        )
+        self.setStatusBar(barra)
 
-        self.setStatusBar(
-            barra
-        )
-
-        # --------------------------------------------------
-        # ESTADOS
-        # --------------------------------------------------
-
-        self.lbl_estado_balanza = QLabel(
-            "⚪ Balanza desconectada"
-        )
-
-        self.lbl_estado_display = QLabel(
-            "⚪ Display desconectado"
-        )
-
-        self.lbl_estado = QLabel(
-            "Esperando..."
-        )
-
-        # --------------------------------------------------
-        # ESTILO INICIAL
-        # --------------------------------------------------
+        self.lbl_estado_balanza = QLabel("⚪ Balanza desconectada")
+        self.lbl_estado_display = QLabel("⚪ Display desconectado")
+        self.lbl_estado = QLabel("Esperando...")
 
         for label in (
             self.lbl_estado_balanza,
             self.lbl_estado_display,
-            self.lbl_estado
+            self.lbl_estado,
         ):
-
             label.setStyleSheet(
                 """
                 QLabel {
@@ -713,85 +841,46 @@ class BalanzaView(QMainWindow):
                 """
             )
 
-        # --------------------------------------------------
-        # AGREGAR
-        # --------------------------------------------------
-
-        barra.addWidget(
-            self.lbl_estado_balanza
-        )
-
-        barra.addWidget(
-            self._separador()
-        )
-
-        barra.addWidget(
-            self.lbl_estado_display
-        )
-
-        barra.addPermanentWidget(
-            self.lbl_estado
-        )
-
-    # ======================================================
-    # SEPARADOR STATUS BAR
-    # ======================================================
+        barra.addWidget(self.lbl_estado_balanza)
+        barra.addWidget(self._separador())
+        barra.addWidget(self.lbl_estado_display)
+        barra.addPermanentWidget(self.lbl_estado)
 
     @staticmethod
     def _separador():
 
         sep = QFrame()
-
-        sep.setFrameShape(
-            QFrame.Shape.VLine
-        )
-
-        sep.setFrameShadow(
-            QFrame.Shadow.Sunken
-        )
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
 
         return sep
-
-    # ======================================================
+    
     # PESO
-    # ======================================================
-
-    def mostrar_peso(
-        self,
-        peso
-    ):
+    def mostrar_peso(self, peso):
 
         self.lbl_peso.setText(
-            f"{peso} kg"
+            f"{peso}<span style='font-size:28px;'> kg</span>"
         )
 
-    # ======================================================
-    # CONFIGURACIÓN
-    # ======================================================
+    def limpiar_peso(self):
 
-    def mostrar_configuracion(
-        self,
-        visible
-    ):
+        self.lbl_peso.setText("---")
 
-        self.grupo_configuracion.setVisible(
-            visible
-        )
+    # CONFIGURACIÓN AVANZADA: MOSTRAR / OCULTAR
+    def mostrar_configuracion(self, visible):
 
-        # Mantener sincronizado el QAction
-        # sin provocar llamada recursiva.
+        if visible:
+            self.dlg_config.show()
+            self.dlg_config.raise_()
+            self.dlg_config.activateWindow()
+        else:
+            self.dlg_config.hide()
 
-        self.act_configuracion.blockSignals(
-            True
-        )
+        self._sincronizar_accion_config(visible)
 
-        self.act_configuracion.setChecked(
-            visible
-        )
+    def _sincronizar_accion_config(self, visible):
 
-        self.act_configuracion.blockSignals(
-            False
-        )
+        self.act_configuracion.setChecked(visible)
 
         self.act_configuracion.setText(
             "Ocultar configuración avanzada"
@@ -799,42 +888,21 @@ class BalanzaView(QMainWindow):
             else "Mostrar configuración avanzada"
         )
 
-        # Ajustar tamaño de ventana
+    # ACERCA DE
+    def mostrar_acerca(self):
 
-        self.centralWidget().layout().activate()
-
-        if visible:
-
-            self.resize(
-                self.width(),
-                max(
-                    self.height(),
-                    700
-                )
-            )
-
-        else:
-
-            self.resize(
-                self.width(),
-                460
-            )
-
-    # ======================================================
-    # ESTADOS
-    # ======================================================
-
-    def _estilo_estado(
-        self,
-        label,
-        texto,
-        color,
-        size=13
-    ):
-
-        label.setText(
-            texto
+        QMessageBox.about(
+            self,
+            "Acerca de",
+            f"{APP_NAME}\n\n"
+            "Puente balanza → display.\n"
+            "Minera MH S.A.C."
         )
+        
+    # ESTADOS (barra inferior)
+    def _estilo_estado(self, label, texto, color, size=13):
+
+        label.setText(texto)
 
         label.setStyleSheet(
             f"""
@@ -847,137 +915,165 @@ class BalanzaView(QMainWindow):
             """
         )
 
-    # ------------------------------------------------------
-    # ESTADO BALANZA
-    # ------------------------------------------------------
+    def estado_balanza(self, texto, color):
 
-    def estado_balanza(
-        self,
-        texto,
-        color
-    ):
+        self._estilo_estado(self.lbl_estado_balanza, texto, color)
 
-        self._estilo_estado(
-            self.lbl_estado_balanza,
-            texto,
-            color
+    def estado_display(self, texto, color):
+
+        self._estilo_estado(self.lbl_estado_display, texto, color)
+
+    def estado_sistema(self, texto, color):
+
+        self._estilo_estado(self.lbl_estado, texto, color, size=14)
+
+    # ESTADO DE LA OPERACIÓN (ticket)
+    def estado_operacion(self, tipo="proceso"):
+
+        texto, fondo, color, borde = ESTADOS_OPERACION[tipo]
+
+        self.lbl_estado_operacion.setText(texto)
+
+        self.lbl_estado_operacion.setStyleSheet(
+            f"""
+            QLabel {{
+                background-color: {fondo};
+                color: {color};
+                border: 1px solid {borde};
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-weight: bold;
+            }}
+            """
         )
 
-    # ------------------------------------------------------
-    # ESTADO DISPLAY
-    # ------------------------------------------------------
-
-    def estado_display(
-        self,
-        texto,
-        color
-    ):
-
-        self._estilo_estado(
-            self.lbl_estado_display,
-            texto,
-            color
-        )
-
-    # ------------------------------------------------------
-    # ESTADO SISTEMA
-    # ------------------------------------------------------
-
-    def estado_sistema(
-        self,
-        texto,
-        color
-    ):
-
-        self._estilo_estado(
-            self.lbl_estado,
-            texto,
-            color,
-            size=14
-        )
-
-    # ======================================================
     # CONTROLES
-    # ======================================================
-
-    def bloquear_configuracion(
-        self,
-        bloquear=True
-    ):
+    def bloquear_configuracion(self, bloquear=True):
 
         habilitado = not bloquear
 
-        # --------------------------------------------------
-        # CONTROLES DE PUERTOS
-        # --------------------------------------------------
+        self.cmb_balanza.setEnabled(habilitado)
+        self.cmb_display.setEnabled(habilitado)
+        self.btn_actualizar.setEnabled(habilitado)
 
-        self.cmb_balanza.setEnabled(
-            habilitado
-        )
+        self.spin_baudrate_balanza.setEnabled(habilitado)
+        self.spin_baudrate_display.setEnabled(habilitado)
 
-        self.cmb_display.setEnabled(
-            habilitado
-        )
+        # El menú de configuración queda siempre disponible para
+        # poder ver el log mientras el sistema funciona.
+        self.act_actualizar_puertos.setEnabled(habilitado)
 
-        self.btn_actualizar.setEnabled(
-            habilitado
-        )
-
-        # --------------------------------------------------
-        # CONFIGURACIÓN SERIAL
-        # --------------------------------------------------
-
-        self.spin_baudrate_balanza.setEnabled(
-            habilitado
-        )
-
-        self.spin_baudrate_display.setEnabled(
-            habilitado
-        )
-
-        # --------------------------------------------------
-        # ACCIONES DEL MENÚ
-        # --------------------------------------------------
-
-        self.act_configuracion.setEnabled(
-            habilitado
-        )
-
-        self.act_actualizar_puertos.setEnabled(
-            habilitado
-        )
-
-    # ======================================================
     # LOG
-    # ======================================================
+    def log(self, texto):
 
-    def log(
-        self,
-        texto
-    ):
+        self.txt_log.appendPlainText(texto)
 
-        self.txt_log.appendPlainText(
-            texto
+        scrollbar = self.txt_log.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    # TABLA DE PESAJES
+    def cargar_pesajes(self, filas):
+        """
+        filas: lista de tuplas de 7 valores:
+        (lote, sacos, fecha_hora_1, peso_1, fecha_hora_2, peso_2, neto, estado)
+        """
+
+        self.tabla_pesajes.setRowCount(len(filas))
+
+        for r, valores in enumerate(filas):
+
+            for c, valor in enumerate(valores):
+
+                item = QTableWidgetItem(str(valor))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                if c == 7:
+                    color = (
+                        "#15803d" if str(valor) == "COMPLETO"
+                        else "#b45309"
+                    )
+                    item.setForeground(QColor(color))
+
+                    fuente = item.font()
+                    fuente.setBold(True)
+                    item.setFont(fuente)
+
+                self.tabla_pesajes.setItem(r, c, item)
+
+    # DATOS DE LA OPERACIÓN
+    def obtener_datos_operacion(self):
+
+        return {
+            "ticket": self.txt_ticket.text().strip(),
+            "lote": self.txt_lote.text().strip(),
+            "placa": self.txt_placa.text().strip(),
+            "carreta": self.txt_carreta.text().strip(),
+            "chofer": self.txt_chofer.text().strip(),
+            "brevete": self.txt_brevete.text().strip(),
+            "proveedor": self.txt_proveedor.text().strip(),
+            "ruc_proveedor": self.txt_ruc_proveedor.text().strip(),
+            "guia_proveedor": self.txt_guia_proveedor.text().strip(),
+            "transportista": self.txt_transportista.text().strip(),
+            "ruc_transportista": self.txt_ruc_transportista.text().strip(),
+            "guia_transportista": self.txt_guia_transportista.text().strip(),
+            "concesion": self.txt_concesion.text().strip(),
+            "codigo": self.txt_codigo.text().strip(),
+            "procedencia": self.txt_procedencia.text().strip(),
+            "producto": self.txt_producto.text().strip(),
+            "cantidad_sacos": self.txt_sacos.text().strip(),
+            "observacion": self.txt_observacion.text().strip(),
+        }
+
+    def _actualizar_lote_actual(self, texto):
+
+        self.lbl_lote_actual.setText(
+            f"Lote actual: {texto.strip() or '—'}"
         )
 
-        scrollbar = (
-            self.txt_log.verticalScrollBar()
+    # DATOS DE DEMOSTRACIÓN
+    def _cargar_demo(self):
+
+        self.txt_ticket.setText("5093")
+        self.txt_lote.setText("510-2795")
+        self.txt_placa.setText("B4V-905")
+
+        self.txt_chofer.setText("CHECALLA PAYE FACUNDO")
+        self.txt_brevete.setText("U41482246")
+
+        self.txt_proveedor.setText("MINERA E INVERSIONES LUIS & CIELO E.I.R.L")
+        self.txt_ruc_proveedor.setText("20613947575")
+        self.txt_guia_proveedor.setText("EG07-000139")
+
+        self.txt_transportista.setText("TRANSPORTES KORIANCAPRIA E.I.R.L")
+        self.txt_ruc_transportista.setText("20612957593")
+        self.txt_guia_transportista.setText("EG03-000132")
+
+        self.txt_concesion.setText("SANTIAGO DE COMPOSTELA N° 6")
+        self.txt_codigo.setText("10000151Y01")
+
+        self.txt_procedencia.setText("ATICO CARAVELI AREQUIPA")
+        self.txt_producto.setText("MINERAL AURÍFERO SULFURADO")
+
+        self.cargar_pesajes(
+            [
+                ("510-2795", "76", "07/10/2025 09:56", "23,030",
+                "07/10/2025 11:12", "12,590", "10,440", "COMPLETO"),
+
+                ("510-2796", "54", "07/10/2025 11:12", "12,590",
+                "07/10/2025 11:35", "7,500", "5,090", "COMPLETO"),
+
+                ("510-2797", "38", "07/10/2025 11:35", "7,500",
+                "—", "—", "—", "PENDIENTE"),
+            ]
         )
 
-        scrollbar.setValue(
-            scrollbar.maximum()
-        )
-
-    # ======================================================
     # CERRAR VENTANA
-    # ======================================================
+    def closeEvent(self, event):
 
-    def closeEvent(
-        self,
-        event
-    ):
+        # Si el diálogo de configuración queda abierto, la app
+        # no terminaría al cerrar la ventana principal.
+        self.dlg_config.close()
 
-        # El controller puede encargarse de detener
-        # mediante su propia conexión si la tiene.
+        self.cerrando.emit()
 
         event.accept()
