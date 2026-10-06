@@ -112,6 +112,11 @@ class BalanzaView(QMainWindow):
         self.completer_transportista = None
         self.completer_ruc_transportista = None
 
+        # Concesión
+        self.concesion_seleccionada = None
+        self.completer_concesion = None
+        self.completer_codigo = None
+
         # Formulario bloqueado al iniciar
         self.bloquear_formulario(True)
 
@@ -401,6 +406,7 @@ class BalanzaView(QMainWindow):
         self.conductor_seleccionado = None
         self.proveedor_seleccionado = None
         self.transportista_seleccionado = None
+        self.concesion_seleccionada = None
 
         # LIMPIAR PESO
         self.limpiar_peso()
@@ -873,6 +879,7 @@ class BalanzaView(QMainWindow):
         self._configurar_autocompletado_proveedor()
         self._configurar_autocompletado_chofer()
         self._configurar_autocompletado_transportista()
+        self._configurar_autocompletado_concesion()
 
     def _configurar_autocompletado_proveedor(self):
         """
@@ -1078,6 +1085,85 @@ class BalanzaView(QMainWindow):
             )
         )
 
+    def _configurar_autocompletado_concesion(self):
+        """
+        Configura el autocompletado de concesión y código.
+
+        El dato principal aparece arriba y el dato complementario
+        aparece debajo.
+        """
+
+        concesiones = self.maestros.get("concesiones", [])
+
+        if not concesiones:
+            return
+
+        # AUTOCOMPLETADO: CONCESIÓN
+        # Principal: nombre
+        # Complementario: código
+        opciones_concesion = [
+            f"{concesion[1]}\n{concesion[2]}" for concesion in concesiones
+        ]
+
+        modelo_concesion = QStringListModel(
+            opciones_concesion,
+            self,
+        )
+
+        self.completer_concesion = QCompleter(
+            modelo_concesion,
+            self,
+        )
+
+        self.completer_concesion.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+        self.completer_concesion.setFilterMode(Qt.MatchFlag.MatchContains)
+
+        self.completer_concesion.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+
+        self.txt_concesion.setCompleter(self.completer_concesion)
+
+        self.completer_concesion.activated[str].connect(
+            lambda texto: QTimer.singleShot(
+                0, lambda: self._seleccionar_concesion(texto)
+            )
+        )
+
+        # AUTOCOMPLETADO: CÓDIGO
+        # Principal: código
+        # Complementario: nombre
+        opciones_codigo = [
+            f"{concesion[2]}\n{concesion[1]}" for concesion in concesiones
+        ]
+
+        modelo_codigo = QStringListModel(
+            opciones_codigo,
+            self,
+        )
+
+        self.completer_codigo = QCompleter(
+            modelo_codigo,
+            self,
+        )
+
+        self.completer_codigo.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+        self.completer_codigo.setFilterMode(Qt.MatchFlag.MatchContains)
+
+        self.completer_codigo.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+
+        self.txt_codigo.setCompleter(self.completer_codigo)
+
+        self.completer_codigo.activated[str].connect(
+            lambda texto: QTimer.singleShot(
+                0, lambda: self._seleccionar_concesion(texto)
+            )
+        )
+
     def _seleccionar_proveedor(self, texto):
         proveedores = self.maestros.get("proveedores", [])
 
@@ -1226,6 +1312,59 @@ class BalanzaView(QMainWindow):
 
                 self.txt_transportista.setText(nombre)
                 self.txt_ruc_transportista.setText(ruc)
+
+                return
+
+    def _seleccionar_concesion(self, texto):
+        """
+        Selecciona una concesión desde el autocompletado
+        y sincroniza nombre, código e ID interno.
+        """
+
+        concesiones = self.maestros.get("concesiones", [])
+
+        # Separar las dos líneas de la opción seleccionada
+        partes = texto.splitlines()
+
+        if len(partes) < 2:
+            return
+
+        dato_principal = partes[0].strip()
+        dato_complementario = partes[1].strip()
+
+        for concesion in concesiones:
+
+            id_concesion = concesion[0]
+            nombre = concesion[1]
+            codigo = concesion[2]
+
+            # Selección desde CONCESIÓN
+            # Principal = nombre
+            # Complementario = código
+            if dato_principal == nombre and dato_complementario == codigo:
+                self.concesion_seleccionada = {
+                    "id_concesion": id_concesion,
+                    "nombre": nombre,
+                    "codigo": codigo,
+                }
+
+                self.txt_concesion.setText(nombre)
+                self.txt_codigo.setText(codigo)
+
+                return
+
+            # Selección desde CÓDIGO
+            # Principal = código
+            # Complementario = nombre
+            if dato_principal == codigo and dato_complementario == nombre:
+                self.concesion_seleccionada = {
+                    "id_concesion": id_concesion,
+                    "nombre": nombre,
+                    "codigo": codigo,
+                }
+
+                self.txt_concesion.setText(nombre)
+                self.txt_codigo.setText(codigo)
 
                 return
 
