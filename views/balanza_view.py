@@ -7,16 +7,12 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QAction, QKeySequence, QColor
 from PyQt6.QtWidgets import (
     QMainWindow,
-    QDialog,
     QWidget,
     QScrollArea,
     QLabel,
     QPushButton,
-    QComboBox,
-    QSpinBox,
     QLineEdit,
     QCompleter,
-    QPlainTextEdit,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -33,14 +29,11 @@ from PyQt6.QtWidgets import (
 
 from config.settings import (
     APP_NAME,
-    BAUDRATE_BALANZA_DEFAULT,
-    BAUDRATE_DISPLAY_DEFAULT,
 )
 from pathlib import Path
 import sys
 
-from pathlib import Path
-import sys
+from views.configuracion_view import ConfiguracionView
 
 
 def ruta_recurso(ruta):
@@ -94,7 +87,7 @@ class BalanzaView(QMainWindow):
 
         self.crear_menu()
         self.crear_interfaz()
-        self.crear_configuracion_avanzada()
+        self.configuracion = ConfiguracionView(self)
         self.crear_barra_estado()
 
         # Autocompletado de proveedores
@@ -613,79 +606,12 @@ class BalanzaView(QMainWindow):
 
         return grupo
 
-    # CONFIGURACIÓN AVANZADA (ventana aparte, no modal)
-    def crear_configuracion_avanzada(self):
-
         # Va en un diálogo propio: abrirla no cambia el tamaño de
         # la ventana principal y el log sigue disponible mientras
         # el sistema está funcionando.
 
-        self.dlg_config = QDialog(self)
-        self.dlg_config.setWindowTitle("Configuración avanzada")
-        self.dlg_config.resize(780, 520)
-
-        layout = QVBoxLayout(self.dlg_config)
         layout.setContentsMargins(14, 10, 14, 10)
         layout.setSpacing(10)
-
-        # ---------------- PUERTOS ----------------
-        grupo_puertos = QGroupBox("Puertos seriales")
-
-        form_puertos = QFormLayout(grupo_puertos)
-
-        self.cmb_balanza = QComboBox()
-        self.cmb_display = QComboBox()
-
-        self.btn_actualizar = QPushButton("🔄  Actualizar puertos")
-
-        form_puertos.addRow("Entrada - Balanza:", self.cmb_balanza)
-        form_puertos.addRow("Salida - Display:", self.cmb_display)
-        form_puertos.addRow("", self.btn_actualizar)
-
-        # ---------------- SERIAL ----------------
-        grupo_serial = QGroupBox("Configuración serial")
-
-        form_serial = QFormLayout(grupo_serial)
-
-        self.spin_baudrate_balanza = QSpinBox()
-        self.spin_baudrate_balanza.setRange(300, 115200)
-        self.spin_baudrate_balanza.setValue(BAUDRATE_BALANZA_DEFAULT)
-
-        self.spin_baudrate_display = QSpinBox()
-        self.spin_baudrate_display.setRange(300, 115200)
-        self.spin_baudrate_display.setValue(BAUDRATE_DISPLAY_DEFAULT)
-
-        form_serial.addRow("Balanza Baudrate:", self.spin_baudrate_balanza)
-        form_serial.addRow("Display Baudrate:", self.spin_baudrate_display)
-
-        fila = QHBoxLayout()
-        fila.setSpacing(10)
-        fila.addWidget(grupo_puertos, 1)
-        fila.addWidget(grupo_serial, 1)
-
-        layout.addLayout(fila)
-
-        # ---------------- LOG ----------------
-        grupo_log = QGroupBox("Detalles técnicos")
-
-        lay_log = QVBoxLayout(grupo_log)
-
-        self.txt_log = QPlainTextEdit()
-        self.txt_log.setReadOnly(True)
-        self.txt_log.setMaximumBlockCount(1000)
-        self.txt_log.setMinimumHeight(150)
-
-        lay_log.addWidget(self.txt_log)
-
-        layout.addWidget(grupo_log, 1)
-
-        # ---------------- CONEXIONES ----------------
-        self.act_actualizar_puertos.triggered.connect(self.btn_actualizar.click)
-
-        # Si el usuario cierra el diálogo con la X, sincroniza el menú
-        self.dlg_config.finished.connect(
-            lambda _codigo: self._sincronizar_accion_config(False)
-        )
 
     # BARRA DE ESTADO
     def crear_barra_estado(self):
@@ -739,11 +665,11 @@ class BalanzaView(QMainWindow):
     def mostrar_configuracion(self, visible):
 
         if visible:
-            self.dlg_config.show()
-            self.dlg_config.raise_()
-            self.dlg_config.activateWindow()
+            self.configuracion.show()
+            self.configuracion.raise_()
+            self.configuracion.activateWindow()
         else:
-            self.dlg_config.hide()
+            self.configuracion.hide()
 
         self._sincronizar_accion_config(visible)
 
@@ -813,26 +739,12 @@ class BalanzaView(QMainWindow):
     # CONTROLES
     def bloquear_configuracion(self, bloquear=True):
 
-        habilitado = not bloquear
+        self.configuracion.bloquear_configuracion(bloquear)
+        self.act_actualizar_puertos.setEnabled(not bloquear)
 
-        self.cmb_balanza.setEnabled(habilitado)
-        self.cmb_display.setEnabled(habilitado)
-        self.btn_actualizar.setEnabled(habilitado)
-
-        self.spin_baudrate_balanza.setEnabled(habilitado)
-        self.spin_baudrate_display.setEnabled(habilitado)
-
-        # El menú de configuración queda siempre disponible para
-        # poder ver el log mientras el sistema funciona.
-        self.act_actualizar_puertos.setEnabled(habilitado)
-
-    # LOG
     def log(self, texto):
 
-        self.txt_log.appendPlainText(texto)
-
-        scrollbar = self.txt_log.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        self.configuracion.log(texto)
 
     # TABLA DE PESAJES
     def cargar_pesajes(self, filas):
@@ -1401,7 +1313,7 @@ class BalanzaView(QMainWindow):
 
         # Si el diálogo de configuración queda abierto, la app
         # no terminaría al cerrar la ventana principal.
-        self.dlg_config.close()
+        self.configuracion.close()
 
         self.cerrando.emit()
 

@@ -70,12 +70,12 @@ class BalanzaController:
         self.view.btn_detener.clicked.connect(self.detener)
 
         # Puertos seriales
-        self.view.btn_actualizar.clicked.connect(self.detectar_puertos)
+        self.view.configuracion.btn_actualizar.clicked.connect(self.detectar_puertos)
+
+        self.view.act_actualizar_puertos.triggered.connect(self.detectar_puertos)
 
         # Datos maestros
-        self.view.btn_actualizar_maestros.clicked.connect(
-            self.actualizar_maestros
-        )
+        self.view.btn_actualizar_maestros.clicked.connect(self.actualizar_maestros)
 
         # DETECTAR PUERTOS AL INICIAR
         self.detectar_puertos()
@@ -92,8 +92,8 @@ class BalanzaController:
         if self.balanza_comunicando:
             return
 
-        self.view.cmb_balanza.clear()
-        self.view.cmb_display.clear()
+        self.view.configuracion.cmb_balanza.clear()
+        self.view.configuracion.cmb_display.clear()
 
         puertos = serial.tools.list_ports.comports()
 
@@ -103,16 +103,20 @@ class BalanzaController:
             texto = f"{puerto.device} - " f"{descripcion}"
 
             # Balanza
-            self.view.cmb_balanza.addItem(texto, puerto.device)
+            self.view.configuracion.cmb_balanza.addItem(texto, puerto.device)
 
             # Display
-            self.view.cmb_display.addItem(texto, puerto.device)
+            self.view.configuracion.cmb_display.addItem(texto, puerto.device)
 
         # SELECCIONAR BALANZA POR DEFECTO
-        self.seleccionar_puerto(self.view.cmb_balanza, PUERTO_BALANZA_DEFAULT)
+        self.seleccionar_puerto(
+            self.view.configuracion.cmb_balanza, PUERTO_BALANZA_DEFAULT
+        )
 
         # SELECCIONAR DISPLAY POR DEFECTO
-        self.seleccionar_puerto(self.view.cmb_display, PUERTO_DISPLAY_DEFAULT)
+        self.seleccionar_puerto(
+            self.view.configuracion.cmb_display, PUERTO_DISPLAY_DEFAULT
+        )
         self.log("[INFO] Puertos actualizados.")
 
     # SELECCIONAR PUERTO
@@ -129,8 +133,8 @@ class BalanzaController:
     # INICIAR
     def iniciar(self):
 
-        puerto_balanza = self.view.cmb_balanza.currentData()
-        puerto_display = self.view.cmb_display.currentData()
+        puerto_balanza = self.view.configuracion.cmb_balanza.currentData()
+        puerto_display = self.view.configuracion.cmb_display.currentData()
 
         # VALIDACIONES
         if not puerto_balanza:
@@ -158,7 +162,7 @@ class BalanzaController:
             # CREAR SERVICIO BALANZA
             self.balanza = SerialBalanza(
                 puerto=puerto_balanza,
-                baudrate=(self.view.spin_baudrate_balanza.value()),
+                baudrate=(self.view.configuracion.spin_baudrate_balanza.value()),
                 timeout=SERIAL_TIMEOUT,
             )
 
@@ -167,7 +171,7 @@ class BalanzaController:
             # CREAR SERVICIO DISPLAY
             self.display = SerialDisplay(
                 puerto=puerto_display,
-                baudrate=(self.view.spin_baudrate_display.value()),
+                baudrate=(self.view.configuracion.spin_baudrate_display.value()),
                 timeout=SERIAL_TIMEOUT,
             )
 
