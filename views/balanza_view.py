@@ -1,4 +1,9 @@
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import (
+    Qt,
+    pyqtSignal,
+    QStringListModel,
+    QTimer,
+)
 from PyQt6.QtGui import QAction, QKeySequence, QColor
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -10,6 +15,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QSpinBox,
     QLineEdit,
+    QCompleter,
     QPlainTextEdit,
     QTableWidget,
     QTableWidgetItem,
@@ -97,6 +103,11 @@ class BalanzaView(QMainWindow):
         self.crear_interfaz()
         self.crear_configuracion_avanzada()
         self.crear_barra_estado()
+
+        # Autocompletado de proveedores
+        self.proveedor_seleccionado = None
+        self.completer_proveedor = None
+        self.completer_ruc_proveedor = None
 
         # Formulario bloqueado al iniciar
         self.bloquear_formulario(True)
@@ -247,12 +258,17 @@ class BalanzaView(QMainWindow):
             "📋  PESAJES PENDIENTES", 40, "btn_pendientes"
         )
 
+        self.btn_actualizar_maestros = self._boton(
+            "🔄  Actualizar maestros", 40, "btn_actualizar_maestros"
+        )
+
         cabecera.addWidget(self.lbl_titulo)
         cabecera.addStretch()
         cabecera.addWidget(self.btn_iniciar)
         cabecera.addWidget(self.btn_detener)
         cabecera.addSpacing(16)
         cabecera.addWidget(self.btn_pendientes)
+        cabecera.addWidget(self.btn_actualizar_maestros)
 
         principal.addLayout(cabecera)
 
@@ -557,7 +573,7 @@ class BalanzaView(QMainWindow):
         layout.addWidget(self.lbl_lote_actual)
 
         return grupo
-    
+
     # GRUPO: PESAJES DE LOS LOTES
     def _crear_grupo_pesajes(self):
 
@@ -879,6 +895,126 @@ class BalanzaView(QMainWindow):
                     item.setFont(fuente)
 
                 self.tabla_pesajes.setItem(r, c, item)
+
+    def cargar_maestros(
+        self, vehiculos, carretas, conductores, proveedores, transportistas, concesiones
+    ):
+        """
+        Recibe los datos maestros desde el Controller.
+        """
+
+        self.maestros = {
+            "vehiculos": vehiculos,
+            "carretas": carretas,
+            "conductores": conductores,
+            "proveedores": proveedores,
+            "transportistas": transportistas,
+            "concesiones": concesiones,
+        }
+
+        self._configurar_autocompletado_proveedor()
+
+    def _configurar_autocompletado_proveedor(self):
+        """
+        Configura el autocompletado de proveedor y RUC.
+
+        El dato principal aparece arriba y el dato complementario
+        aparece debajo.
+        """
+
+        proveedores = self.maestros.get("proveedores", [])
+
+        if not proveedores:
+            return
+
+        # ==========================================================
+        # AUTOCOMPLETADO: PROVEEDOR
+        # Principal: nombre
+        # Complementario: RUC
+        # ==========================================================
+
+        opciones_proveedor = [
+            f"{proveedor[1]}\n{proveedor[2]}"
+            for proveedor in proveedores
+        ]
+
+        modelo_proveedor = QStringListModel(opciones_proveedor,self)
+        self.completer_proveedor = QCompleter(modelo_proveedor,self)
+        self.completer_proveedor.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer_proveedor.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_proveedor.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.txt_proveedor.setCompleter(self.completer_proveedor)
+        self.completer_proveedor.activated[str].connect(
+            lambda texto: QTimer.singleShot
+                (
+                    0,
+                    lambda: self._seleccionar_proveedor(texto)
+                )
+        )
+
+        # AUTOCOMPLETADO: RUC
+        # Principal: RUC
+        # Complementario: nombre
+        opciones_ruc = [f"{proveedor[2]}\n{proveedor[1]}"for proveedor in proveedores]
+
+        modelo_ruc = QStringListModel(opciones_ruc,self)
+        self.completer_ruc_proveedor = QCompleter(modelo_ruc,self)
+        self.completer_ruc_proveedor.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer_ruc_proveedor.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_ruc_proveedor.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.txt_ruc_proveedor.setCompleter(self.completer_ruc_proveedor)
+        self.completer_ruc_proveedor.activated[str].connect(
+            lambda texto: QTimer.singleShot
+                (
+                    0,
+                    lambda: self._seleccionar_proveedor(texto)
+                )
+        )
+
+    def _seleccionar_proveedor(self, texto):
+        proveedores = self.maestros.get("proveedores", [])
+
+        # Separar las dos líneas de la opción seleccionada
+        partes = texto.splitlines()
+
+        if len(partes) < 2:
+            return
+
+        dato_principal = partes[0].strip()
+        dato_complementario = partes[1].strip()
+
+        for proveedor in proveedores:
+            id_proveedor = proveedor[0]
+            nombre = proveedor[1]
+            ruc = proveedor[2]
+
+            # Selección desde PROVEEDOR
+            # Principal = nombre
+            # Complementario = RUC
+            if (dato_principal == nombre and dato_complementario == ruc):
+                self.proveedor_seleccionado = {
+                    "id_proveedor": id_proveedor,
+                    "nombre": nombre,
+                    "ruc": ruc,
+                }
+                self.txt_proveedor.setText(nombre)
+                self.txt_ruc_proveedor.setText(ruc)
+                return
+
+            # Selección desde RUC
+            # Principal = RUC
+            # Complementario = nombre
+            if (dato_principal == ruc and dato_complementario == nombre):
+                self.proveedor_seleccionado = {
+                    "id_proveedor": id_proveedor,
+                    "nombre": nombre,
+                    "ruc": ruc,
+                }
+
+                self.txt_proveedor.setText(nombre)
+                self.txt_ruc_proveedor.setText(ruc)
+
+                return
 
     # DATOS DE LA OPERACIÓN
     def obtener_datos_operacion(self):

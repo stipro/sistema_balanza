@@ -8,6 +8,15 @@ from services.serial_balanza import SerialBalanza
 from services.serial_display import SerialDisplay
 from utils.parser_peso import ParserPeso
 
+from database.database import (
+    obtener_vehiculos,
+    obtener_carretas,
+    obtener_conductores,
+    obtener_proveedores,
+    obtener_transportistas,
+    obtener_concesiones,
+)
+
 from config.settings import (
     BAUDRATE_BALANZA_DEFAULT,
     BAUDRATE_DISPLAY_DEFAULT,
@@ -35,6 +44,16 @@ class BalanzaController:
 
         self.balanza = None
         self.display = None
+
+        # MAESTROS
+        self.vehiculos = []
+        self.carretas = []
+        self.conductores = []
+        self.proveedores = []
+        self.transportistas = []
+        self.concesiones = []
+        
+        self.cargar_maestros()
 
         # ======================================================
         # ESTADOS
@@ -741,3 +760,31 @@ class BalanzaController:
         self.view.log(
             texto
         )
+
+    def cargar_maestros(self):
+        """
+        Carga los datos maestros desde SQLite.
+        """
+
+        self.vehiculos = obtener_vehiculos()
+        self.carretas = obtener_carretas()
+        self.conductores = obtener_conductores()
+        self.proveedores = obtener_proveedores()
+        self.transportistas = obtener_transportistas()
+        self.concesiones = obtener_concesiones()
+        
+        self.view.cargar_maestros(
+            self.vehiculos,
+            self.carretas,
+            self.conductores,
+            self.proveedores,
+            self.transportistas,
+            self.concesiones
+        )
+
+    def actualizar_maestros(self):
+        """
+        Recarga los datos maestros desde SQLite.
+        """
+
+        self.cargar_maestros()
