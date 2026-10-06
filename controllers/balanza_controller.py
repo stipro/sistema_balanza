@@ -68,7 +68,14 @@ class BalanzaController:
         # EVENTOS DE LA VIEW
         self.view.btn_iniciar.clicked.connect(self.iniciar)
         self.view.btn_detener.clicked.connect(self.detener)
+
+        # Puertos seriales
         self.view.btn_actualizar.clicked.connect(self.detectar_puertos)
+
+        # Datos maestros
+        self.view.btn_actualizar_maestros.clicked.connect(
+            self.actualizar_maestros
+        )
 
         # DETECTAR PUERTOS AL INICIAR
         self.detectar_puertos()

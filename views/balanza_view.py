@@ -102,6 +102,11 @@ class BalanzaView(QMainWindow):
         self.completer_proveedor = None
         self.completer_ruc_proveedor = None
 
+        # Chofer
+        self.conductor_seleccionado = None
+        self.completer_chofer = None
+        self.completer_brevete = None
+
         # Formulario bloqueado al iniciar
         self.bloquear_formulario(True)
 
@@ -387,6 +392,9 @@ class BalanzaView(QMainWindow):
 
         for campo in campos:
             campo.clear()
+
+        self.conductor_seleccionado = None
+        self.proveedor_seleccionado = None
 
         # LIMPIAR PESO
         self.limpiar_peso()
@@ -857,6 +865,7 @@ class BalanzaView(QMainWindow):
         }
 
         self._configurar_autocompletado_proveedor()
+        self._configurar_autocompletado_chofer()
 
     def _configurar_autocompletado_proveedor(self):
         """
@@ -916,6 +925,73 @@ class BalanzaView(QMainWindow):
             )
         )
 
+    def _configurar_autocompletado_chofer(self):
+        """
+        Configura el autocompletado de chofer y brevete.
+
+        El dato principal aparece arriba y el dato complementario
+        aparece debajo.
+        """
+
+        conductores = self.maestros.get("conductores", [])
+
+        if not conductores:
+            return
+
+        # AUTOCOMPLETADO: CHOFER
+        # Principal: nombre
+        # Complementario: brevete
+        opciones_chofer = [
+            f"{conductor[1]}\n{conductor[2]}" for conductor in conductores
+        ]
+
+        modelo_chofer = QStringListModel(
+            opciones_chofer,
+            self,
+        )
+
+        self.completer_chofer = QCompleter(
+            modelo_chofer,
+            self,
+        )
+        self.completer_chofer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer_chofer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_chofer.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+        self.txt_chofer.setCompleter(self.completer_chofer)
+
+        self.completer_chofer.activated[str].connect(
+            lambda texto: QTimer.singleShot(0, lambda: self._seleccionar_chofer(texto))
+        )
+
+        # AUTOCOMPLETADO: BREVETE
+        # Principal: brevete
+        # Complementario: nombre
+        opciones_brevete = [
+            f"{conductor[2]}\n{conductor[1]}" for conductor in conductores
+        ]
+
+        modelo_brevete = QStringListModel(
+            opciones_brevete,
+            self,
+        )
+
+        self.completer_brevete = QCompleter(
+            modelo_brevete,
+            self,
+        )
+        self.completer_brevete.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer_brevete.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_brevete.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+        self.txt_brevete.setCompleter(self.completer_brevete)
+
+        self.completer_brevete.activated[str].connect(
+            lambda texto: QTimer.singleShot(0, lambda: self._seleccionar_chofer(texto))
+        )
+
     def _seleccionar_proveedor(self, texto):
         proveedores = self.maestros.get("proveedores", [])
 
@@ -958,6 +1034,59 @@ class BalanzaView(QMainWindow):
 
                 self.txt_proveedor.setText(nombre)
                 self.txt_ruc_proveedor.setText(ruc)
+
+                return
+
+    def _seleccionar_chofer(self, texto):
+        """
+        Selecciona un chofer desde el autocompletado
+        y sincroniza nombre, brevete e ID interno.
+        """
+
+        conductores = self.maestros.get("conductores", [])
+
+        # Separar las dos líneas de la opción seleccionada
+        partes = texto.splitlines()
+
+        if len(partes) < 2:
+            return
+
+        dato_principal = partes[0].strip()
+        dato_complementario = partes[1].strip()
+
+        for conductor in conductores:
+
+            id_conductor = conductor[0]
+            nombre = conductor[1]
+            brevete = conductor[2]
+
+            # Selección desde CHOFER
+            # Principal = nombre
+            # Complementario = brevete
+            if dato_principal == nombre and dato_complementario == brevete:
+                self.conductor_seleccionado = {
+                    "id_conductor": id_conductor,
+                    "nombre": nombre,
+                    "brevete": brevete,
+                }
+
+                self.txt_chofer.setText(nombre)
+                self.txt_brevete.setText(brevete)
+
+                return
+
+            # Selección desde BREVETE
+            # Principal = brevete
+            # Complementario = nombre
+            if dato_principal == brevete and dato_complementario == nombre:
+                self.conductor_seleccionado = {
+                    "id_conductor": id_conductor,
+                    "nombre": nombre,
+                    "brevete": brevete,
+                }
+
+                self.txt_chofer.setText(nombre)
+                self.txt_brevete.setText(brevete)
 
                 return
 
