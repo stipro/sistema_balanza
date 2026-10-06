@@ -49,38 +49,31 @@ def ruta_recurso(ruta):
     como cuando la aplicación está empaquetada.
     """
 
-    if getattr(
-        sys,
-        "frozen",
-        False
-    ):
+    if getattr(sys, "frozen", False):
         base = Path(sys._MEIPASS)
     else:
         base = Path(__file__).resolve().parent.parent
 
     return base / ruta
 
+
 def cargar_estilo():
 
-    ruta = ruta_recurso(
-        "styles/balanza.qss"
-    )
+    ruta = ruta_recurso("styles/balanza.qss")
 
-    with open(
-        ruta,
-        "r",
-        encoding="utf-8"
-    ) as archivo:
+    with open(ruta, "r", encoding="utf-8") as archivo:
 
         return archivo.read()
 
+
 # (texto, fondo, color texto, borde)
 ESTADOS_OPERACION = {
-    "proceso":   ("● EN PROCESO", "#eff6ff", "#1d4ed8", "#bfdbfe"),
-    "pendiente": ("● PENDIENTE",  "#fffbeb", "#b45309", "#fde68a"),
-    "completo":  ("● COMPLETO",   "#f0fdf4", "#15803d", "#bbf7d0"),
-    "error":     ("● ERROR",      "#fef2f2", "#b91c1c", "#fecaca"),
+    "proceso": ("● EN PROCESO", "#eff6ff", "#1d4ed8", "#bfdbfe"),
+    "pendiente": ("● PENDIENTE", "#fffbeb", "#b45309", "#fde68a"),
+    "completo": ("● COMPLETO", "#f0fdf4", "#15803d", "#bbf7d0"),
+    "error": ("● ERROR", "#fef2f2", "#b91c1c", "#fecaca"),
 }
+
 
 # VISTA PRINCIPAL
 class BalanzaView(QMainWindow):
@@ -185,10 +178,7 @@ class BalanzaView(QMainWindow):
         # ---------------- CONFIGURACIÓN ----------------
         menu_config = barra.addMenu("&Configuración")
 
-        self.act_configuracion = QAction(
-            "Mostrar configuración avanzada",
-            self
-        )
+        self.act_configuracion = QAction("Mostrar configuración avanzada", self)
         self.act_configuracion.setCheckable(True)
         self.act_configuracion.setShortcut(QKeySequence("Ctrl+,"))
 
@@ -209,9 +199,7 @@ class BalanzaView(QMainWindow):
         menu_ayuda.addAction(self.act_acerca)
 
         # ---------------- CONEXIONES ----------------
-        self.act_configuracion.triggered.connect(
-            self.mostrar_configuracion
-        )
+        self.act_configuracion.triggered.connect(self.mostrar_configuracion)
 
     # INTERFAZ PRINCIPAL
     def crear_interfaz(self):
@@ -243,16 +231,14 @@ class BalanzaView(QMainWindow):
         cabecera.setSpacing(10)
 
         self.lbl_titulo = QLabel("⚖  FORMATO DE PESAJE AUTOMATIZADO")
-        self.lbl_titulo.setStyleSheet(
-            """
+        self.lbl_titulo.setStyleSheet("""
             QLabel {
                 font-size: 22px;
                 font-weight: bold;
                 color: #111827;
                 padding: 4px 0;
             }
-            """
-        )
+            """)
 
         self.btn_pendientes = self._boton(
             "📋  PESAJES PENDIENTES", 40, "btn_pendientes"
@@ -284,9 +270,7 @@ class BalanzaView(QMainWindow):
         self.txt_carreta = self._campo(centrado=True)
 
         self.lbl_estado_operacion = QLabel()
-        self.lbl_estado_operacion.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
+        self.lbl_estado_operacion.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_estado_operacion.setMinimumHeight(34)
 
         lay_ident.addWidget(self._etiqueta("Ticket:"))
@@ -327,9 +311,7 @@ class BalanzaView(QMainWindow):
         self.btn_salir = self._boton("🚪  SALIR")
 
         self.btn_salir.clicked.connect(self.close)
-        self.btn_nuevo.clicked.connect(
-            self.nuevo_registro
-        )
+        self.btn_nuevo.clicked.connect(self.nuevo_registro)
 
         acciones.addWidget(self.btn_nuevo)
         acciones.addWidget(self.btn_guardar, 1)
@@ -388,24 +370,18 @@ class BalanzaView(QMainWindow):
             self.txt_lote,
             self.txt_placa,
             self.txt_carreta,
-
             self.txt_chofer,
             self.txt_brevete,
-
             self.txt_proveedor,
             self.txt_ruc_proveedor,
             self.txt_guia_proveedor,
-
             self.txt_transportista,
             self.txt_ruc_transportista,
             self.txt_guia_transportista,
-
             self.txt_concesion,
             self.txt_codigo,
-
             self.txt_procedencia,
             self.txt_producto,
-
             self.txt_observacion,
         ]
 
@@ -419,9 +395,7 @@ class BalanzaView(QMainWindow):
         self.tabla_pesajes.setRowCount(0)
 
         # LIMPIAR LOTE ACTUAL
-        self.lbl_lote_actual.setText(
-            "Lote actual: —"
-        )
+        self.lbl_lote_actual.setText("Lote actual: —")
 
         # ESTADO
         self.estado_operacion("proceso")
@@ -540,32 +514,26 @@ class BalanzaView(QMainWindow):
 
         lbl_info = QLabel("Lectura actual de la balanza")
         lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_info.setStyleSheet(
-            """
+        lbl_info.setStyleSheet("""
             QLabel {
                 color: #6b7280;
                 font-size: 13px;
                 font-weight: normal;
             }
-            """
-        )
+            """)
 
-        self.btn_capturar = self._boton(
-            "⚖  CAPTURAR PESO", 58, "btn_capturar"
-        )
+        self.btn_capturar = self._boton("⚖  CAPTURAR PESO", 58, "btn_capturar")
 
         self.lbl_lote_actual = QLabel("Lote actual: —")
         self.lbl_lote_actual.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_lote_actual.setStyleSheet(
-            """
+        self.lbl_lote_actual.setStyleSheet("""
             QLabel {
                 color: #374151;
                 font-size: 14px;
                 font-weight: bold;
                 padding: 4px;
             }
-            """
-        )
+            """)
 
         layout.addWidget(self.lbl_peso, 1)
         layout.addWidget(lbl_info)
@@ -606,9 +574,7 @@ class BalanzaView(QMainWindow):
         self.tabla_pesajes.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection
         )
-        self.tabla_pesajes.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
+        self.tabla_pesajes.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.tabla_pesajes.setAlternatingRowColors(True)
         self.tabla_pesajes.setMinimumHeight(140)
         self.tabla_pesajes.setMaximumHeight(190)
@@ -617,18 +583,11 @@ class BalanzaView(QMainWindow):
         header.setStretchLastSection(False)
 
         for col in range(8):
-            header.setSectionResizeMode(
-                col,
-                QHeaderView.ResizeMode.Stretch
-            )
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
 
-        header.setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
 
-        header.setSectionResizeMode(
-            1, QHeaderView.ResizeMode.ResizeToContents
-        )
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
 
         layout.addWidget(self.tabla_pesajes)
 
@@ -701,9 +660,7 @@ class BalanzaView(QMainWindow):
         layout.addWidget(grupo_log, 1)
 
         # ---------------- CONEXIONES ----------------
-        self.act_actualizar_puertos.triggered.connect(
-            self.btn_actualizar.click
-        )
+        self.act_actualizar_puertos.triggered.connect(self.btn_actualizar.click)
 
         # Si el usuario cierra el diálogo con la X, sincroniza el menú
         self.dlg_config.finished.connect(
@@ -727,15 +684,13 @@ class BalanzaView(QMainWindow):
             self.lbl_estado_display,
             self.lbl_estado,
         ):
-            label.setStyleSheet(
-                """
+            label.setStyleSheet("""
                 QLabel {
                     font-weight: bold;
                     font-size: 13px;
                     padding: 2px 10px;
                 }
-                """
-            )
+                """)
 
         barra.addWidget(self.lbl_estado_balanza)
         barra.addWidget(self._separador())
@@ -750,13 +705,11 @@ class BalanzaView(QMainWindow):
         sep.setFrameShadow(QFrame.Shadow.Sunken)
 
         return sep
-    
+
     # PESO
     def mostrar_peso(self, peso):
 
-        self.lbl_peso.setText(
-            f"{peso}<span style='font-size:28px;'> kg</span>"
-        )
+        self.lbl_peso.setText(f"{peso}<span style='font-size:28px;'> kg</span>")
 
     def limpiar_peso(self):
 
@@ -790,26 +743,22 @@ class BalanzaView(QMainWindow):
         QMessageBox.about(
             self,
             "Acerca de",
-            f"{APP_NAME}\n\n"
-            "Puente balanza → display.\n"
-            "Minera MH S.A.C."
+            f"{APP_NAME}\n\n" "Puente balanza → display.\n" "Minera MH S.A.C.",
         )
-        
+
     # ESTADOS (barra inferior)
     def _estilo_estado(self, label, texto, color, size=13):
 
         label.setText(texto)
 
-        label.setStyleSheet(
-            f"""
+        label.setStyleSheet(f"""
             QLabel {{
                 font-weight: bold;
                 font-size: {size}px;
                 padding: 2px 10px;
                 color: {color};
             }}
-            """
-        )
+            """)
 
     def estado_balanza(self, texto, color):
 
@@ -830,8 +779,7 @@ class BalanzaView(QMainWindow):
 
         self.lbl_estado_operacion.setText(texto)
 
-        self.lbl_estado_operacion.setStyleSheet(
-            f"""
+        self.lbl_estado_operacion.setStyleSheet(f"""
             QLabel {{
                 background-color: {fondo};
                 color: {color};
@@ -840,8 +788,7 @@ class BalanzaView(QMainWindow):
                 padding: 4px 10px;
                 font-weight: bold;
             }}
-            """
-        )
+            """)
 
     # CONTROLES
     def bloquear_configuracion(self, bloquear=True):
@@ -884,10 +831,7 @@ class BalanzaView(QMainWindow):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
                 if c == 7:
-                    color = (
-                        "#15803d" if str(valor) == "COMPLETO"
-                        else "#b45309"
-                    )
+                    color = "#15803d" if str(valor) == "COMPLETO" else "#b45309"
                     item.setForeground(QColor(color))
 
                     fuente = item.font()
@@ -934,41 +878,42 @@ class BalanzaView(QMainWindow):
         # ==========================================================
 
         opciones_proveedor = [
-            f"{proveedor[1]}\n{proveedor[2]}"
-            for proveedor in proveedores
+            f"{proveedor[1]}\n{proveedor[2]}" for proveedor in proveedores
         ]
 
-        modelo_proveedor = QStringListModel(opciones_proveedor,self)
-        self.completer_proveedor = QCompleter(modelo_proveedor,self)
+        modelo_proveedor = QStringListModel(opciones_proveedor, self)
+        self.completer_proveedor = QCompleter(modelo_proveedor, self)
         self.completer_proveedor.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.completer_proveedor.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.completer_proveedor.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.completer_proveedor.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
         self.txt_proveedor.setCompleter(self.completer_proveedor)
         self.completer_proveedor.activated[str].connect(
-            lambda texto: QTimer.singleShot
-                (
-                    0,
-                    lambda: self._seleccionar_proveedor(texto)
-                )
+            lambda texto: QTimer.singleShot(
+                0, lambda: self._seleccionar_proveedor(texto)
+            )
         )
 
         # AUTOCOMPLETADO: RUC
         # Principal: RUC
         # Complementario: nombre
-        opciones_ruc = [f"{proveedor[2]}\n{proveedor[1]}"for proveedor in proveedores]
+        opciones_ruc = [f"{proveedor[2]}\n{proveedor[1]}" for proveedor in proveedores]
 
-        modelo_ruc = QStringListModel(opciones_ruc,self)
-        self.completer_ruc_proveedor = QCompleter(modelo_ruc,self)
-        self.completer_ruc_proveedor.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        modelo_ruc = QStringListModel(opciones_ruc, self)
+        self.completer_ruc_proveedor = QCompleter(modelo_ruc, self)
+        self.completer_ruc_proveedor.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
         self.completer_ruc_proveedor.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.completer_ruc_proveedor.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.completer_ruc_proveedor.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
         self.txt_ruc_proveedor.setCompleter(self.completer_ruc_proveedor)
         self.completer_ruc_proveedor.activated[str].connect(
-            lambda texto: QTimer.singleShot
-                (
-                    0,
-                    lambda: self._seleccionar_proveedor(texto)
-                )
+            lambda texto: QTimer.singleShot(
+                0, lambda: self._seleccionar_proveedor(texto)
+            )
         )
 
     def _seleccionar_proveedor(self, texto):
@@ -991,7 +936,7 @@ class BalanzaView(QMainWindow):
             # Selección desde PROVEEDOR
             # Principal = nombre
             # Complementario = RUC
-            if (dato_principal == nombre and dato_complementario == ruc):
+            if dato_principal == nombre and dato_complementario == ruc:
                 self.proveedor_seleccionado = {
                     "id_proveedor": id_proveedor,
                     "nombre": nombre,
@@ -1004,7 +949,7 @@ class BalanzaView(QMainWindow):
             # Selección desde RUC
             # Principal = RUC
             # Complementario = nombre
-            if (dato_principal == ruc and dato_complementario == nombre):
+            if dato_principal == ruc and dato_complementario == nombre:
                 self.proveedor_seleccionado = {
                     "id_proveedor": id_proveedor,
                     "nombre": nombre,
@@ -1042,9 +987,7 @@ class BalanzaView(QMainWindow):
 
     def _actualizar_lote_actual(self, texto):
 
-        self.lbl_lote_actual.setText(
-            f"Lote actual: {texto.strip() or '—'}"
-        )
+        self.lbl_lote_actual.setText(f"Lote actual: {texto.strip() or '—'}")
 
     # CERRAR VENTANA
     def closeEvent(self, event):

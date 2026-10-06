@@ -3,22 +3,14 @@ import serial
 
 class SerialBalanza:
 
-    def __init__(
-        self,
-        puerto,
-        baudrate=9600,
-        timeout=0.1
-    ):
+    def __init__(self, puerto, baudrate=9600, timeout=0.1):
         self.puerto = puerto
         self.baudrate = baudrate
         self.timeout = timeout
 
         self.serial = None
 
-    # ==========================================================
     # CONECTAR
-    # ==========================================================
-
     def conectar(self):
 
         self.serial = serial.Serial(
@@ -31,27 +23,17 @@ class SerialBalanza:
         )
 
         # Igual que el programa original
-
         self.serial.dtr = True
         self.serial.rts = True
 
         self.serial.reset_input_buffer()
 
-    # ==========================================================
     # ESTADO
-    # ==========================================================
-
     def esta_conectada(self):
 
-        return (
-            self.serial is not None
-            and self.serial.is_open
-        )
+        return self.serial is not None and self.serial.is_open
 
-    # ==========================================================
     # DATOS DISPONIBLES
-    # ==========================================================
-
     def hay_datos(self):
 
         if not self.esta_conectada():
@@ -60,10 +42,7 @@ class SerialBalanza:
 
         return self.serial.in_waiting > 0
 
-    # ==========================================================
     # LEER
-    # ==============================================================
-
     def leer(self):
 
         if not self.esta_conectada():
@@ -82,15 +61,9 @@ class SerialBalanza:
 
             return ""
 
-        return datos.decode(
-            "ascii",
-            errors="ignore"
-        )
+        return datos.decode("ascii", errors="ignore")
 
-    # ==========================================================
     # CERRAR
-    # ==============================================================
-
     def cerrar(self):
 
         if self.serial:

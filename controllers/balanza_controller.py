@@ -27,10 +27,8 @@ from config.settings import (
     PUERTO_DISPLAY_DEFAULT,
 )
 
-
-# ==========================================================
 # CONTROLADOR PRINCIPAL
-# ==========================================================
+
 
 class BalanzaController:
 
@@ -38,10 +36,7 @@ class BalanzaController:
 
         self.view = view
 
-        # ======================================================
         # SERVICIOS SERIAL
-        # ======================================================
-
         self.balanza = None
         self.display = None
 
@@ -52,74 +47,33 @@ class BalanzaController:
         self.proveedores = []
         self.transportistas = []
         self.concesiones = []
-        
+
         self.cargar_maestros()
 
-        # ======================================================
         # ESTADOS
-        # ======================================================
-
         self.balanza_comunicando = False
         self.esperando_balanza = False
 
-        # ======================================================
         # TIMER DE LECTURA
-        # ======================================================
-
         self.timer = QTimer()
+        self.timer.setInterval(INTERVALO_LECTURA_MS)
+        self.timer.timeout.connect(self.procesar_balanza)
 
-        self.timer.setInterval(
-            INTERVALO_LECTURA_MS
-        )
-
-        self.timer.timeout.connect(
-            self.procesar_balanza
-        )
-
-        # ======================================================
         # TIMER DE INICIO
-        # ======================================================
-
         self.timer_inicio = QTimer()
+        self.timer_inicio.setSingleShot(True)
+        self.timer_inicio.setInterval(TIMEOUT_INICIO_MS)
+        self.timer_inicio.timeout.connect(self.error_inicio)
 
-        self.timer_inicio.setSingleShot(
-            True
-        )
-
-        self.timer_inicio.setInterval(
-            TIMEOUT_INICIO_MS
-        )
-
-        self.timer_inicio.timeout.connect(
-            self.error_inicio
-        )
-
-        # ======================================================
         # EVENTOS DE LA VIEW
-        # ======================================================
+        self.view.btn_iniciar.clicked.connect(self.iniciar)
+        self.view.btn_detener.clicked.connect(self.detener)
+        self.view.btn_actualizar.clicked.connect(self.detectar_puertos)
 
-        self.view.btn_iniciar.clicked.connect(
-            self.iniciar
-        )
-
-        self.view.btn_detener.clicked.connect(
-            self.detener
-        )
-
-        self.view.btn_actualizar.clicked.connect(
-            self.detectar_puertos
-        )
-
-        # ======================================================
         # DETECTAR PUERTOS AL INICIAR
-        # ======================================================
-
         self.detectar_puertos()
 
-    # ==========================================================
     # DETECTAR PUERTOS
-    # ==========================================================
-
     def detectar_puertos(self):
 
         # Si el sistema está esperando comunicación,
@@ -134,250 +88,118 @@ class BalanzaController:
         self.view.cmb_balanza.clear()
         self.view.cmb_display.clear()
 
-        puertos = (
-            serial.tools.list_ports.comports()
-        )
+        puertos = serial.tools.list_ports.comports()
 
         for puerto in puertos:
 
-            descripcion = (
-                puerto.description
-                or "Sin descripción"
-            )
-
-            texto = (
-                f"{puerto.device} - "
-                f"{descripcion}"
-            )
+            descripcion = puerto.description or "Sin descripción"
+            texto = f"{puerto.device} - " f"{descripcion}"
 
             # Balanza
-            self.view.cmb_balanza.addItem(
-                texto,
-                puerto.device
-            )
+            self.view.cmb_balanza.addItem(texto, puerto.device)
 
             # Display
-            self.view.cmb_display.addItem(
-                texto,
-                puerto.device
-            )
+            self.view.cmb_display.addItem(texto, puerto.device)
 
-        # ======================================================
         # SELECCIONAR BALANZA POR DEFECTO
-        # ======================================================
+        self.seleccionar_puerto(self.view.cmb_balanza, PUERTO_BALANZA_DEFAULT)
 
-        self.seleccionar_puerto(
-            self.view.cmb_balanza,
-            PUERTO_BALANZA_DEFAULT
-        )
-
-        # ======================================================
         # SELECCIONAR DISPLAY POR DEFECTO
-        # ======================================================
+        self.seleccionar_puerto(self.view.cmb_display, PUERTO_DISPLAY_DEFAULT)
+        self.log("[INFO] Puertos actualizados.")
 
-        self.seleccionar_puerto(
-            self.view.cmb_display,
-            PUERTO_DISPLAY_DEFAULT
-        )
-
-        self.log(
-            "[INFO] Puertos actualizados."
-        )
-
-    # ==========================================================
     # SELECCIONAR PUERTO
-    # ==========================================================
+    def seleccionar_puerto(self, combo, puerto_objetivo):
 
-    def seleccionar_puerto(
-        self,
-        combo,
-        puerto_objetivo
-    ):
+        for i in range(combo.count()):
 
-        for i in range(
-            combo.count()
-        ):
+            if combo.itemData(i) == puerto_objetivo:
 
-            if (
-                combo.itemData(i)
-                == puerto_objetivo
-            ):
-
-                combo.setCurrentIndex(
-                    i
-                )
+                combo.setCurrentIndex(i)
 
                 break
 
-    # ==========================================================
     # INICIAR
-    # ==========================================================
-
     def iniciar(self):
 
-        puerto_balanza = (
-            self.view.cmb_balanza.currentData()
-        )
+        puerto_balanza = self.view.cmb_balanza.currentData()
+        puerto_display = self.view.cmb_display.currentData()
 
-        puerto_display = (
-            self.view.cmb_display.currentData()
-        )
-
-        # ======================================================
         # VALIDACIONES
-        # ======================================================
-
         if not puerto_balanza:
-
             QMessageBox.warning(
-                self.view,
-                "Balanza",
-                "Seleccione el puerto de la balanza."
+                self.view, "Balanza", "Seleccione el puerto de la balanza."
             )
-
             return
 
         if not puerto_display:
-
             QMessageBox.warning(
-                self.view,
-                "Display",
-                "Seleccione el puerto del display."
+                self.view, "Display", "Seleccione el puerto del display."
             )
-
             return
 
         if puerto_balanza == puerto_display:
-
             QMessageBox.warning(
                 self.view,
                 "Puertos",
-                "La balanza y el display "
-                "deben utilizar puertos diferentes."
+                "La balanza y el display " "deben utilizar puertos diferentes.",
             )
-
             return
 
         try:
 
-            # ==================================================
             # CREAR SERVICIO BALANZA
-            # ==================================================
-
             self.balanza = SerialBalanza(
                 puerto=puerto_balanza,
-                baudrate=(
-                    self.view
-                    .spin_baudrate_balanza
-                    .value()
-                ),
-                timeout=SERIAL_TIMEOUT
+                baudrate=(self.view.spin_baudrate_balanza.value()),
+                timeout=SERIAL_TIMEOUT,
             )
 
             self.balanza.conectar()
 
-            # ==================================================
             # CREAR SERVICIO DISPLAY
-            # ==================================================
-
             self.display = SerialDisplay(
                 puerto=puerto_display,
-                baudrate=(
-                    self.view
-                    .spin_baudrate_display
-                    .value()
-                ),
-                timeout=SERIAL_TIMEOUT
+                baudrate=(self.view.spin_baudrate_display.value()),
+                timeout=SERIAL_TIMEOUT,
             )
 
             self.display.conectar()
 
-            # ==================================================
             # ESTADOS INTERNOS
-            # ==================================================
-
             self.esperando_balanza = True
             self.balanza_comunicando = False
 
-            # ==================================================
             # ESTADO BALANZA
-            # ==================================================
-
             self.view.estado_balanza(
-                f"🟡 Balanza: {puerto_balanza} "
-                f"- esperando señal...",
-                "#b88600"
+                f"🟡 Balanza: {puerto_balanza} " f"- esperando señal...", "#b88600"
             )
 
-            # ==================================================
             # ESTADO DISPLAY
-            # ==================================================
-
             self.view.estado_display(
-                f"🟢 Puerto display abierto: "
-                f"{puerto_display}",
-                "green"
+                f"🟢 Puerto display abierto: " f"{puerto_display}", "green"
             )
 
-            # ==================================================
             # ESTADO SISTEMA
-            # ==================================================
-
             self.view.estado_sistema(
-                "🟡 Esperando comunicación "
-                "de la balanza...",
-                "#b88600"
+                "🟡 Esperando comunicación " "de la balanza...", "#b88600"
             )
 
-            self.view.lbl_peso.setText(
-                "---"
-            )
+            self.view.lbl_peso.setText("---")
 
-            # ==================================================
             # BLOQUEAR CONFIGURACIÓN
-            # ==================================================
+            self.view.btn_iniciar.setEnabled(False)
+            self.view.btn_detener.setEnabled(True)
+            self.view.bloquear_configuracion(True)
 
-            self.view.btn_iniciar.setEnabled(
-                False
-            )
-
-            self.view.btn_detener.setEnabled(
-                True
-            )
-
-            self.view.bloquear_configuracion(
-                True
-            )
-
-            # ==================================================
             # LOG
-            # ==================================================
-
             self.log("")
+            self.log("[INICIO] Sistema iniciando...")
+            self.log(f"[INFO] Balanza: " f"{puerto_balanza}")
+            self.log(f"[INFO] Display: " f"{puerto_display}")
+            self.log("[INFO] Esperando datos " "de la balanza...")
 
-            self.log(
-                "[INICIO] Sistema iniciando..."
-            )
-
-            self.log(
-                f"[INFO] Balanza: "
-                f"{puerto_balanza}"
-            )
-
-            self.log(
-                f"[INFO] Display: "
-                f"{puerto_display}"
-            )
-
-            self.log(
-                "[INFO] Esperando datos "
-                "de la balanza..."
-            )
-
-            # ==================================================
             # INICIAR TIMERS
-            # ==================================================
-
             self.timer.start()
             self.timer_inicio.start()
 
@@ -386,48 +208,24 @@ class BalanzaController:
             self.cerrar()
             self.restaurar_controles()
 
-            self.view.estado_balanza(
-                "🔴 Error al abrir la balanza",
-                "red"
-            )
-
-            self.view.estado_display(
-                "🔴 Error al abrir el display",
-                "red"
-            )
-
-            self.view.estado_sistema(
-                "🔴 Error al abrir los puertos",
-                "red"
-            )
+            self.view.estado_balanza("🔴 Error al abrir la balanza", "red")
+            self.view.estado_display("🔴 Error al abrir el display", "red")
+            self.view.estado_sistema("🔴 Error al abrir los puertos", "red")
 
             QMessageBox.critical(
                 self.view,
                 "Error de conexión",
-                "No se pudieron abrir los puertos.\n\n"
-                f"{e}"
+                "No se pudieron abrir los puertos.\n\n" f"{e}",
             )
 
         except Exception as e:
 
             self.cerrar()
             self.restaurar_controles()
+            self.view.estado_sistema("🔴 Error al iniciar", "red")
+            QMessageBox.critical(self.view, "Error", str(e))
 
-            self.view.estado_sistema(
-                "🔴 Error al iniciar",
-                "red"
-            )
-
-            QMessageBox.critical(
-                self.view,
-                "Error",
-                str(e)
-            )
-
-    # ==========================================================
     # PROCESAR BALANZA
-    # ==========================================================
-
     def procesar_balanza(self):
 
         if not self.balanza:
@@ -436,23 +234,13 @@ class BalanzaController:
         try:
 
             cadena = self.balanza.leer()
-
             if not cadena:
                 return
 
-            self.log(
-                f"BALANZA → {repr(cadena)}"
-            )
+            self.log(f"BALANZA → {repr(cadena)}")
 
-            # ==================================================
             # SEPARAR TRAMAS
-            # ==================================================
-
-            lineas = (
-                cadena
-                .replace("\r", "\n")
-                .split("\n")
-            )
+            lineas = cadena.replace("\r", "\n").split("\n")
 
             for linea in lineas:
 
@@ -461,21 +249,13 @@ class BalanzaController:
                 if not linea:
                     continue
 
-                # ==================================================
                 # PARSER
-                # ==================================================
-
-                peso = ParserPeso.extraer(
-                    linea
-                )
+                peso = ParserPeso.extraer(linea)
 
                 if peso is None:
                     continue
 
-                # ==================================================
                 # PRIMERA COMUNICACIÓN
-                # ==================================================
-
                 if not self.balanza_comunicando:
 
                     self.balanza_comunicando = True
@@ -483,122 +263,60 @@ class BalanzaController:
 
                     self.timer_inicio.stop()
 
-                    # ------------------------------------------
                     # BALANZA
-                    # ------------------------------------------
+                    self.view.estado_balanza("🟢 Balanza comunicando", "green")
 
-                    self.view.estado_balanza(
-                        "🟢 Balanza comunicando",
-                        "green"
-                    )
-
-                    # ------------------------------------------
                     # DISPLAY
-                    # ------------------------------------------
+                    self.view.estado_display("🟢 Display listo", "green")
 
-                    self.view.estado_display(
-                        "🟢 Display listo",
-                        "green"
-                    )
-
-                    # ------------------------------------------
                     # SISTEMA
-                    # ------------------------------------------
+                    self.view.estado_sistema("🟢 Sistema funcionando", "green")
+                    self.log("[OK] Señal de balanza detectada.")
+                    self.log("[OK] Sistema funcionando.")
 
-                    self.view.estado_sistema(
-                        "🟢 Sistema funcionando",
-                        "green"
-                    )
-
-                    self.log(
-                        "[OK] Señal de balanza detectada."
-                    )
-
-                    self.log(
-                        "[OK] Sistema funcionando."
-                    )
-
-                # ==================================================
                 # MOSTRAR PESO
-                # ==================================================
+                self.view.mostrar_peso(peso)
 
-                self.view.mostrar_peso(
-                    peso
-                )
-
-                # ==================================================
                 # ENVIAR DISPLAY
-                # ==================================================
-
-                self.enviar_display(
-                    peso
-                )
+                self.enviar_display(peso)
 
         except serial.SerialException as e:
 
-            self.log(
-                f"[ERROR BALANZA] {e}"
-            )
-
+            self.log(f"[ERROR BALANZA] {e}")
             self.detener()
-
             QMessageBox.critical(
                 self.view,
                 "Error de balanza",
-                "Se perdió la comunicación "
-                "con la balanza.\n\n"
-                f"{e}"
+                "Se perdió la comunicación " "con la balanza.\n\n" f"{e}",
             )
 
         except Exception as e:
 
-            self.log(
-                f"[ERROR] {e}"
-            )
+            self.log(f"[ERROR] {e}")
 
-    # ==========================================================
     # ENVIAR DISPLAY
-    # ==========================================================
-
-    def enviar_display(
-        self,
-        peso
-    ):
+    def enviar_display(self, peso):
 
         if not self.display:
             return
 
         try:
 
-            mensaje = (
-                self.display.enviar_peso(
-                    peso
-                )
-            )
+            mensaje = self.display.enviar_peso(peso)
 
             if mensaje:
 
-                self.log(
-                    f"DISPLAY ← "
-                    f"{repr(mensaje)}"
-                )
+                self.log(f"DISPLAY ← " f"{repr(mensaje)}")
 
         except serial.SerialException as e:
 
-            self.log(
-                f"[ERROR DISPLAY] {e}"
-            )
+            self.log(f"[ERROR DISPLAY] {e}")
 
         except Exception as e:
 
-            self.log(
-                f"[ERROR DISPLAY] {e}"
-            )
+            self.log(f"[ERROR DISPLAY] {e}")
 
-    # ==========================================================
     # TIMEOUT DE INICIO
-    # ==========================================================
-
     def error_inicio(self):
 
         # Si ya llegó una señal válida,
@@ -612,14 +330,9 @@ class BalanzaController:
 
         self.log("")
 
-        self.log(
-            "[ERROR] No se recibió información "
-            "válida de la balanza."
-        )
+        self.log("[ERROR] No se recibió información " "válida de la balanza.")
 
-        self.log(
-            "[ERROR] Tiempo de espera agotado."
-        )
+        self.log("[ERROR] Tiempo de espera agotado.")
 
         # Cerrar puertos
         self.cerrar()
@@ -629,20 +342,12 @@ class BalanzaController:
         # ======================================================
 
         self.view.estado_balanza(
-            "🔴 No se detectó comunicación "
-            "con la balanza",
-            "red"
+            "🔴 No se detectó comunicación " "con la balanza", "red"
         )
 
-        self.view.estado_display(
-            "⚪ Display detenido",
-            "gray"
-        )
+        self.view.estado_display("⚪ Display detenido", "gray")
 
-        self.view.estado_sistema(
-            "🔴 No se pudo iniciar el sistema",
-            "red"
-        )
+        self.view.estado_sistema("🔴 No se pudo iniciar el sistema", "red")
 
         # ======================================================
         # RESTAURAR CONTROLES
@@ -663,54 +368,26 @@ class BalanzaController:
             "• Que la balanza esté encendida.\n"
             "• Que el cable serial/USB esté conectado.\n"
             "• Que el puerto seleccionado sea correcto.\n"
-            "• Que la configuración sea 9600 / 8N1."
+            "• Que la configuración sea 9600 / 8N1.",
         )
 
-    # ==========================================================
     # DETENER
-    # ==========================================================
-
     def detener(self):
 
         self.timer.stop()
-
         self.timer_inicio.stop()
-
         self.esperando_balanza = False
-
         self.balanza_comunicando = False
-
         self.cerrar()
 
-        self.view.lbl_peso.setText(
-            "---"
-        )
-
-        self.view.estado_balanza(
-            "🔴 Balanza desconectada",
-            "red"
-        )
-
-        self.view.estado_display(
-            "🔴 Display desconectado",
-            "red"
-        )
-
-        self.view.estado_sistema(
-            "Detenido",
-            "#555"
-        )
-
+        self.view.lbl_peso.setText("---")
+        self.view.estado_balanza("🔴 Balanza desconectada", "red")
+        self.view.estado_display("🔴 Display desconectado", "red")
+        self.view.estado_sistema("Detenido", "#555")
         self.restaurar_controles()
+        self.log("[SISTEMA DETENIDO]")
 
-        self.log(
-            "[SISTEMA DETENIDO]"
-        )
-
-    # ==========================================================
     # CERRAR SERVICIOS
-    # ==========================================================
-
     def cerrar(self):
 
         if self.balanza:
@@ -730,36 +407,17 @@ class BalanzaController:
         self.balanza = None
         self.display = None
 
-    # ==========================================================
     # RESTAURAR CONTROLES
-    # ==========================================================
-
     def restaurar_controles(self):
 
-        self.view.btn_iniciar.setEnabled(
-            True
-        )
+        self.view.btn_iniciar.setEnabled(True)
+        self.view.btn_detener.setEnabled(False)
+        self.view.bloquear_configuracion(False)
 
-        self.view.btn_detener.setEnabled(
-            False
-        )
-
-        self.view.bloquear_configuracion(
-            False
-        )
-
-    # ==========================================================
     # LOG
-    # ==========================================================
+    def log(self, texto):
 
-    def log(
-        self,
-        texto
-    ):
-
-        self.view.log(
-            texto
-        )
+        self.view.log(texto)
 
     def cargar_maestros(self):
         """
@@ -772,14 +430,14 @@ class BalanzaController:
         self.proveedores = obtener_proveedores()
         self.transportistas = obtener_transportistas()
         self.concesiones = obtener_concesiones()
-        
+
         self.view.cargar_maestros(
             self.vehiculos,
             self.carretas,
             self.conductores,
             self.proveedores,
             self.transportistas,
-            self.concesiones
+            self.concesiones,
         )
 
     def actualizar_maestros(self):

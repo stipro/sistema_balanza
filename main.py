@@ -6,6 +6,7 @@ from views.balanza_view import BalanzaView
 from controllers.balanza_controller import BalanzaController
 from database.database import inicializar_base_datos, insertar_datos_prueba
 
+
 def main():
 
     # Crear SQLite y sus tablas
@@ -13,21 +14,15 @@ def main():
     # Cargar datos iniciales para pruebas
     insertar_datos_prueba()
 
-    app = QApplication(
-        sys.argv
-    )
+    app = QApplication(sys.argv)
 
     view = BalanzaView()
 
-    controller = BalanzaController(
-        view
-    )
+    controller = BalanzaController(view)
 
     view.show()
 
-    sys.exit(
-        app.exec()
-    )
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

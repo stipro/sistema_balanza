@@ -1,11 +1,11 @@
 import sqlite3
 from pathlib import Path
 
-# ==========================================================
 # UBICACIÓN DE LA BASE DE DATOS
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "balanza.db"
+
 
 # CONEXIÓN
 def obtener_conexion():
@@ -13,10 +13,11 @@ def obtener_conexion():
     Obtiene una conexión a SQLite.
     """
 
-    DATA_DIR.mkdir(parents=True,exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     conexion = sqlite3.connect(DB_PATH)
     conexion.execute("PRAGMA foreign_keys = ON")
     return conexion
+
 
 # CREAR TABLAS
 def inicializar_base_datos():
@@ -28,8 +29,7 @@ def inicializar_base_datos():
         cursor = conexion.cursor()
 
         # VEHÍCULOS
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS vehiculos (
                 id_vehiculo INTEGER PRIMARY KEY AUTOINCREMENT,
                 placa TEXT NOT NULL UNIQUE
@@ -37,8 +37,7 @@ def inicializar_base_datos():
             """)
 
         # CARRETAS
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS carretas (
                 id_carreta INTEGER PRIMARY KEY AUTOINCREMENT,
                 placa TEXT NOT NULL UNIQUE
@@ -46,8 +45,7 @@ def inicializar_base_datos():
             """)
 
         # CONDUCTORES
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS conductores (
                 id_conductor INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
@@ -56,8 +54,7 @@ def inicializar_base_datos():
             """)
 
         # PROVEEDORES
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS proveedores (
                 id_proveedor INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
@@ -66,8 +63,7 @@ def inicializar_base_datos():
             """)
 
         # TRANSPORTISTAS
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS transportistas (
                 id_transportista INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
@@ -76,8 +72,7 @@ def inicializar_base_datos():
             """)
 
         # CONCESIONES
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS concesiones (
                 id_concesion INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
@@ -86,8 +81,7 @@ def inicializar_base_datos():
             """)
 
         # PESAJES
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS pesajes (
                 id_pesaje INTEGER PRIMARY KEY AUTOINCREMENT,
                 uuid_pesaje TEXT NOT NULL UNIQUE,
@@ -136,8 +130,7 @@ def inicializar_base_datos():
             )""")
 
         # PESAJES LOTES
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS pesajes_lotes (
                 id_pesaje_lote INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_pesaje INTEGER NOT NULL,
@@ -164,8 +157,7 @@ def inicializar_base_datos():
                     ON DELETE CASCADE)""")
 
         # PESAJES REGISTROS
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS pesajes_registros (
                 id_registro INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_pesaje INTEGER NOT NULL,
@@ -184,6 +176,7 @@ def inicializar_base_datos():
     finally:
         conexion.close()
 
+
 def insertar_datos_prueba():
     conexion = obtener_conexion()
     try:
@@ -201,7 +194,7 @@ def insertar_datos_prueba():
                 ("T6P-742",),
                 ("C9M-518",),
                 ("F2R-637",),
-            ]
+            ],
         )
 
         # ==================================================
@@ -219,7 +212,7 @@ def insertar_datos_prueba():
                 ("C3R-615",),
                 ("C4R-836",),
                 ("C5R-247",),
-            ]
+            ],
         )
 
         # ==================================================
@@ -240,7 +233,7 @@ def insertar_datos_prueba():
                 ("CONDORI HUANCA MARCO ANTONIO", "C43829157"),
                 ("MAMANI APAZA JORGE LUIS", "M44731582"),
                 ("FLORES HUAYTA EDWIN", "F45982173"),
-            ]
+            ],
         )
 
         # ==================================================
@@ -256,27 +249,12 @@ def insertar_datos_prueba():
             VALUES (?, ?)
             """,
             [
-                (
-                    "MINERA E INVERSIONES LUIS & CIELO E.I.R.L",
-                    "20613947575"
-                ),
-                (
-                    "COMPAÑÍA MINERA ANDES DEL SUR S.A.C.",
-                    "20587412639"
-                ),
-                (
-                    "MINERA SANTA ROSA E.I.R.L.",
-                    "20602581473"
-                ),
-                (
-                    "MINERALES DEL PACÍFICO S.A.C.",
-                    "20481263751"
-                ),
-                (
-                    "SERVICIOS MINEROS EL SOL E.I.R.L.",
-                    "20604729185"
-                ),
-            ]
+                ("MINERA E INVERSIONES LUIS & CIELO E.I.R.L", "20613947575"),
+                ("COMPAÑÍA MINERA ANDES DEL SUR S.A.C.", "20587412639"),
+                ("MINERA SANTA ROSA E.I.R.L.", "20602581473"),
+                ("MINERALES DEL PACÍFICO S.A.C.", "20481263751"),
+                ("SERVICIOS MINEROS EL SOL E.I.R.L.", "20604729185"),
+            ],
         )
 
         # ==================================================
@@ -292,27 +270,12 @@ def insertar_datos_prueba():
             VALUES (?, ?)
             """,
             [
-                (
-                    "TRANSPORTES KORIANCAPRIA E.I.R.L.",
-                    "20612957593"
-                ),
-                (
-                    "TRANSPORTES ANDINOS DEL SUR S.A.C.",
-                    "20563821479"
-                ),
-                (
-                    "TRANSPORTES MINEROS DEL PACÍFICO E.I.R.L.",
-                    "20601847352"
-                ),
-                (
-                    "LOGÍSTICA MINERA AREQUIPA S.A.C.",
-                    "20492731586"
-                ),
-                (
-                    "TRANSPORTES SANTA CATALINA E.I.R.L.",
-                    "20603581724"
-                ),
-            ]
+                ("TRANSPORTES KORIANCAPRIA E.I.R.L.", "20612957593"),
+                ("TRANSPORTES ANDINOS DEL SUR S.A.C.", "20563821479"),
+                ("TRANSPORTES MINEROS DEL PACÍFICO E.I.R.L.", "20601847352"),
+                ("LOGÍSTICA MINERA AREQUIPA S.A.C.", "20492731586"),
+                ("TRANSPORTES SANTA CATALINA E.I.R.L.", "20603581724"),
+            ],
         )
 
         # ==================================================
@@ -328,27 +291,12 @@ def insertar_datos_prueba():
             VALUES (?, ?)
             """,
             [
-                (
-                    "SANTIAGO DE COMPOSTELA N° 6",
-                    "10000151Y01"
-                ),
-                (
-                    "SANTA ROSA N° 12",
-                    "10000284Y02"
-                ),
-                (
-                    "CERRO VERDE N° 8",
-                    "10000317Y03"
-                ),
-                (
-                    "SAN ANTONIO N° 15",
-                    "10000426Y04"
-                ),
-                (
-                    "NUEVA ESPERANZA N° 3",
-                    "10000539Y05"
-                ),
-            ]
+                ("SANTIAGO DE COMPOSTELA N° 6", "10000151Y01"),
+                ("SANTA ROSA N° 12", "10000284Y02"),
+                ("CERRO VERDE N° 8", "10000317Y03"),
+                ("SAN ANTONIO N° 15", "10000426Y04"),
+                ("NUEVA ESPERANZA N° 3", "10000539Y05"),
+            ],
         )
 
         conexion.commit()
@@ -356,6 +304,7 @@ def insertar_datos_prueba():
     finally:
 
         conexion.close()
+
 
 def obtener_vehiculos():
     conexion = obtener_conexion()
@@ -370,6 +319,7 @@ def obtener_vehiculos():
     finally:
         conexion.close()
 
+
 def obtener_carretas():
     conexion = obtener_conexion()
     try:
@@ -382,6 +332,7 @@ def obtener_carretas():
         return cursor.fetchall()
     finally:
         conexion.close()
+
 
 def obtener_conductores():
     conexion = obtener_conexion()
@@ -396,6 +347,7 @@ def obtener_conductores():
     finally:
         conexion.close()
 
+
 def obtener_proveedores():
     conexion = obtener_conexion()
     try:
@@ -409,6 +361,7 @@ def obtener_proveedores():
     finally:
         conexion.close()
 
+
 def obtener_transportistas():
     conexion = obtener_conexion()
     try:
@@ -421,6 +374,7 @@ def obtener_transportistas():
         return cursor.fetchall()
     finally:
         conexion.close()
+
 
 def obtener_concesiones():
     conexion = obtener_conexion()
