@@ -22,3 +22,8 @@ env/
 # Archivos temporales
 *.tmp
 *.temp
+
+# PyInstaller
+build/
+dist/
+*.spec
