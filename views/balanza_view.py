@@ -107,6 +107,11 @@ class BalanzaView(QMainWindow):
         self.completer_chofer = None
         self.completer_brevete = None
 
+        # Transportista
+        self.transportista_seleccionado = None
+        self.completer_transportista = None
+        self.completer_ruc_transportista = None
+
         # Formulario bloqueado al iniciar
         self.bloquear_formulario(True)
 
@@ -395,6 +400,7 @@ class BalanzaView(QMainWindow):
 
         self.conductor_seleccionado = None
         self.proveedor_seleccionado = None
+        self.transportista_seleccionado = None
 
         # LIMPIAR PESO
         self.limpiar_peso()
@@ -866,6 +872,7 @@ class BalanzaView(QMainWindow):
 
         self._configurar_autocompletado_proveedor()
         self._configurar_autocompletado_chofer()
+        self._configurar_autocompletado_transportista()
 
     def _configurar_autocompletado_proveedor(self):
         """
@@ -992,6 +999,85 @@ class BalanzaView(QMainWindow):
             lambda texto: QTimer.singleShot(0, lambda: self._seleccionar_chofer(texto))
         )
 
+    def _configurar_autocompletado_transportista(self):
+        """
+        Configura el autocompletado de transportista y RUC.
+
+        El dato principal aparece arriba y el dato complementario
+        aparece debajo.
+        """
+
+        transportistas = self.maestros.get("transportistas", [])
+
+        if not transportistas:
+            return
+
+        # AUTOCOMPLETADO: TRANSPORTISTA
+        # Principal: nombre
+        # Complementario: RUC
+        opciones_transportista = [
+            f"{transportista[1]}\n{transportista[2]}"
+            for transportista in transportistas
+        ]
+
+        modelo_transportista = QStringListModel(
+            opciones_transportista,
+            self,
+        )
+
+        self.completer_transportista = QCompleter(
+            modelo_transportista,
+            self,
+        )
+        self.completer_transportista.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
+        self.completer_transportista.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_transportista.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+
+        self.txt_transportista.setCompleter(self.completer_transportista)
+
+        self.completer_transportista.activated[str].connect(
+            lambda texto: QTimer.singleShot(
+                0, lambda: self._seleccionar_transportista(texto)
+            )
+        )
+
+        # AUTOCOMPLETADO: RUC
+        # Principal: RUC
+        # Complementario: nombre
+        opciones_ruc = [
+            f"{transportista[2]}\n{transportista[1]}"
+            for transportista in transportistas
+        ]
+
+        modelo_ruc = QStringListModel(
+            opciones_ruc,
+            self,
+        )
+
+        self.completer_ruc_transportista = QCompleter(
+            modelo_ruc,
+            self,
+        )
+        self.completer_ruc_transportista.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
+        self.completer_ruc_transportista.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_ruc_transportista.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+
+        self.txt_ruc_transportista.setCompleter(self.completer_ruc_transportista)
+
+        self.completer_ruc_transportista.activated[str].connect(
+            lambda texto: QTimer.singleShot(
+                0, lambda: self._seleccionar_transportista(texto)
+            )
+        )
+
     def _seleccionar_proveedor(self, texto):
         proveedores = self.maestros.get("proveedores", [])
 
@@ -1087,6 +1173,59 @@ class BalanzaView(QMainWindow):
 
                 self.txt_chofer.setText(nombre)
                 self.txt_brevete.setText(brevete)
+
+                return
+
+    def _seleccionar_transportista(self, texto):
+        """
+        Selecciona un transportista desde el autocompletado
+        y sincroniza nombre, RUC e ID interno.
+        """
+
+        transportistas = self.maestros.get("transportistas", [])
+
+        # Separar las dos líneas de la opción seleccionada
+        partes = texto.splitlines()
+
+        if len(partes) < 2:
+            return
+
+        dato_principal = partes[0].strip()
+        dato_complementario = partes[1].strip()
+
+        for transportista in transportistas:
+
+            id_transportista = transportista[0]
+            nombre = transportista[1]
+            ruc = transportista[2]
+
+            # Selección desde TRANSPORTISTA
+            # Principal = nombre
+            # Complementario = RUC
+            if dato_principal == nombre and dato_complementario == ruc:
+                self.transportista_seleccionado = {
+                    "id_transportista": id_transportista,
+                    "nombre": nombre,
+                    "ruc": ruc,
+                }
+
+                self.txt_transportista.setText(nombre)
+                self.txt_ruc_transportista.setText(ruc)
+
+                return
+
+            # Selección desde RUC
+            # Principal = RUC
+            # Complementario = nombre
+            if dato_principal == ruc and dato_complementario == nombre:
+                self.transportista_seleccionado = {
+                    "id_transportista": id_transportista,
+                    "nombre": nombre,
+                    "ruc": ruc,
+                }
+
+                self.txt_transportista.setText(nombre)
+                self.txt_ruc_transportista.setText(ruc)
 
                 return
 
