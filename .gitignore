@@ -23,6 +23,11 @@ env/
 *.tmp
 *.temp
 
+# Base de datos local SQLite
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
 # PyInstaller
 build/
 dist/
