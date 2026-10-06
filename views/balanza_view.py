@@ -319,7 +319,6 @@ class BalanzaView(QMainWindow):
         self.btn_salir = self._boton("🚪  SALIR")
 
         self.btn_salir.clicked.connect(self.close)
-        self.btn_nuevo.clicked.connect(self.nuevo_registro)
 
         acciones.addWidget(self.btn_nuevo)
         acciones.addWidget(self.btn_guardar, 1)
@@ -365,6 +364,50 @@ class BalanzaView(QMainWindow):
 
         # El ticket se mantiene bloqueado.
         self.txt_ticket.setEnabled(False)
+
+    def mostrar_ticket(self, ticket):
+        self.txt_ticket.setText(str(ticket))
+
+    def preparar_nuevo_registro(self, ticket):
+        """
+        Prepara la interfaz para un nuevo pesaje.
+        """
+
+        campos = [
+            self.txt_ticket,
+            self.txt_lote,
+            self.txt_placa,
+            self.txt_carreta,
+            self.txt_chofer,
+            self.txt_brevete,
+            self.txt_proveedor,
+            self.txt_ruc_proveedor,
+            self.txt_guia_proveedor,
+            self.txt_transportista,
+            self.txt_ruc_transportista,
+            self.txt_guia_transportista,
+            self.txt_concesion,
+            self.txt_codigo,
+            self.txt_procedencia,
+            self.txt_producto,
+            self.txt_observacion,
+        ]
+
+        for campo in campos:
+            campo.clear()
+
+        self.conductor_seleccionado = None
+        self.proveedor_seleccionado = None
+        self.transportista_seleccionado = None
+        self.concesion_seleccionada = None
+
+        self.limpiar_peso()
+        self.tabla_pesajes.setRowCount(0)
+        self.lbl_lote_actual.setText("Lote actual: —")
+        self.mostrar_ticket(ticket)
+        self.estado_operacion("proceso")
+        self.bloquear_formulario(False)
+        self.txt_lote.setFocus()
 
     def nuevo_registro(self):
         """

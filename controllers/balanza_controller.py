@@ -8,6 +8,8 @@ from services.serial_balanza import SerialBalanza
 from services.serial_display import SerialDisplay
 from utils.parser_peso import ParserPeso
 
+from database.database import obtener_proximo_ticket
+
 from database.database import (
     obtener_vehiculos,
     obtener_carretas,
@@ -68,6 +70,7 @@ class BalanzaController:
         # EVENTOS DE LA VIEW
         self.view.btn_iniciar.clicked.connect(self.iniciar)
         self.view.btn_detener.clicked.connect(self.detener)
+        self.view.btn_nuevo.clicked.connect(self.nuevo_registro)
 
         # Puertos seriales
         self.view.configuracion.btn_actualizar.clicked.connect(self.detectar_puertos)
@@ -429,6 +432,12 @@ class BalanzaController:
     def log(self, texto):
 
         self.view.log(texto)
+
+    def nuevo_registro(self):
+
+        proximo_ticket = obtener_proximo_ticket()
+
+        self.view.preparar_nuevo_registro(proximo_ticket)
 
     def cargar_maestros(self):
         """

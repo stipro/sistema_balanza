@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from config.settings import TICKET_INICIAL
 
 # UBICACIÓN DE LA BASE DE DATOS
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -85,7 +86,7 @@ def inicializar_base_datos():
             CREATE TABLE IF NOT EXISTS pesajes (
                 id_pesaje INTEGER PRIMARY KEY AUTOINCREMENT,
                 uuid_pesaje TEXT NOT NULL UNIQUE,
-                ticket TEXT NOT NULL UNIQUE,
+                ticket INTEGER NOT NULL UNIQUE,
                 id_vehiculo INTEGER NOT NULL,
                 id_carreta INTEGER,
                 id_conductor INTEGER,
@@ -303,6 +304,28 @@ def insertar_datos_prueba():
 
     finally:
 
+        conexion.close()
+
+
+def obtener_proximo_ticket():
+    conexion = obtener_conexion()
+
+    try:
+        cursor = conexion.cursor()
+
+        cursor.execute("""
+            SELECT MAX(ticket)
+            FROM pesajes
+        """)
+
+        ultimo_ticket = cursor.fetchone()[0]
+
+        if ultimo_ticket is None:
+            return TICKET_INICIAL + 1
+
+        return int(ultimo_ticket) + 1
+
+    finally:
         conexion.close()
 
 
