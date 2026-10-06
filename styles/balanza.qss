@@ -1,0 +1,250 @@
+QMainWindow,
+QDialog,
+QScrollArea,
+QWidget#central {
+    background-color: #f3f4f6;
+}
+
+QScrollArea {
+    border: none;
+}
+
+/* ---------------- MENÚ ---------------- */
+
+QMenuBar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #d1d5db;
+    padding: 2px;
+}
+
+QMenuBar::item {
+    padding: 5px 12px;
+    border-radius: 4px;
+    background: transparent;
+}
+
+QMenuBar::item:selected {
+    background-color: #2563eb;
+    color: white;
+}
+
+QMenu {
+    background-color: #ffffff;
+    border: 1px solid #d1d5db;
+    padding: 4px;
+}
+
+QMenu::item {
+    padding: 6px 28px 6px 24px;
+    border-radius: 4px;
+}
+
+QMenu::item:selected {
+    background-color: #2563eb;
+    color: white;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 4px 8px;
+}
+
+/* ---------------- GRUPOS ---------------- */
+
+QGroupBox {
+    background-color: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    margin-top: 14px;
+    padding: 16px 12px 10px 12px;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #374151;
+}
+
+/* ---------------- ETIQUETAS ---------------- */
+
+QLabel#etiqueta {
+    color: #374151;
+    font-weight: 600;
+}
+
+/* ---------------- CAMPOS ---------------- */
+
+QLineEdit,
+QComboBox,
+QSpinBox {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 4px 8px;
+    background-color: #ffffff;
+    min-height: 24px;
+}
+
+QLineEdit:focus,
+QComboBox:focus,
+QSpinBox:focus {
+    border: 1px solid #2563eb;
+}
+
+QLineEdit[readOnly="true"] {
+    background-color: #f3f4f6;
+    color: #374151;
+    font-weight: bold;
+}
+
+/* ---------------- BOTONES ---------------- */
+
+QPushButton {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 7px 14px;
+    background-color: #ffffff;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #eff6ff;
+    border-color: #93c5fd;
+}
+
+QPushButton:pressed {
+    background-color: #dbeafe;
+}
+
+QPushButton:disabled {
+    color: #9ca3af;
+    background-color: #f3f4f6;
+}
+
+QPushButton#btn_iniciar,
+QPushButton#btn_detener,
+QPushButton#btn_guardar,
+QPushButton#btn_capturar,
+QPushButton#btn_pendientes {
+    border: none;
+    color: white;
+    font-weight: bold;
+}
+
+QPushButton#btn_iniciar {
+    background-color: #16a34a;
+    font-size: 14px;
+}
+
+QPushButton#btn_iniciar:hover {
+    background-color: #15803d;
+}
+
+QPushButton#btn_detener {
+    background-color: #dc2626;
+    font-size: 14px;
+}
+
+QPushButton#btn_detener:hover {
+    background-color: #b91c1c;
+}
+
+QPushButton#btn_iniciar:disabled,
+QPushButton#btn_detener:disabled,
+QPushButton#btn_guardar:disabled,
+QPushButton#btn_capturar:disabled,
+QPushButton#btn_pendientes:disabled {
+    background-color: #d1d5db;
+    color: #6b7280;
+}
+
+QPushButton#btn_capturar {
+    background-color: #2563eb;
+    font-size: 18px;
+    padding: 12px 20px;
+}
+
+QPushButton#btn_capturar:hover {
+    background-color: #1d4ed8;
+}
+
+QPushButton#btn_capturar:pressed {
+    background-color: #1e40af;
+}
+
+QPushButton#btn_guardar {
+    background-color: #16a34a;
+    font-size: 15px;
+}
+
+QPushButton#btn_guardar:hover {
+    background-color: #15803d;
+}
+
+QPushButton#btn_pendientes {
+    background-color: #f59e0b;
+}
+
+QPushButton#btn_pendientes:hover {
+    background-color: #d97706;
+}
+
+/* ---------------- PESO ---------------- */
+
+QLabel#lbl_peso {
+    background-color: #0b1220;
+    color: #22ff88;
+    border: 3px solid #1f2937;
+    border-radius: 10px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 64px;
+    font-weight: bold;
+    padding: 10px;
+}
+
+/* ---------------- TABLA ---------------- */
+
+QTableWidget {
+    background-color: #ffffff;
+    alternate-background-color: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    gridline-color: #e5e7eb;
+    selection-background-color: #dbeafe;
+    selection-color: #111827;
+}
+
+QTableWidget::item {
+    padding: 4px;
+}
+
+QHeaderView::section {
+    background-color: #1f2937;
+    color: white;
+    padding: 6px;
+    border: none;
+    font-weight: bold;
+}
+
+/* ---------------- LOG ---------------- */
+
+QPlainTextEdit {
+    background-color: #111827;
+    color: #d1d5db;
+    border-radius: 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+}
+
+/* ---------------- BARRA DE ESTADO ---------------- */
+
+QStatusBar {
+    background-color: #ffffff;
+    border-top: 1px solid #d1d5db;
+}
+
+QStatusBar::item {
+    border: none;
+}

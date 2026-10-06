@@ -30,255 +30,43 @@ from config.settings import (
     BAUDRATE_BALANZA_DEFAULT,
     BAUDRATE_DISPLAY_DEFAULT,
 )
+from pathlib import Path
+import sys
+
+from pathlib import Path
+import sys
 
 
-# Poner en False para que los campos salgan vacíos
-MOSTRAR_DATOS_DEMO = True
+def ruta_recurso(ruta):
+    """
+    Obtiene la ruta de un recurso tanto en desarrollo
+    como cuando la aplicación está empaquetada.
+    """
 
-# ESTILO GENERAL
-ESTILO = """
-QMainWindow,
-QDialog,
-QScrollArea,
-QWidget#central {
-    background-color: #f3f4f6;
-}
+    if getattr(
+        sys,
+        "frozen",
+        False
+    ):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent.parent
 
-QScrollArea {
-    border: none;
-}
+    return base / ruta
 
-/* ---------------- MENÚ ---------------- */
-QMenuBar {
-    background-color: #ffffff;
-    border-bottom: 1px solid #d1d5db;
-    padding: 2px;
-}
+def cargar_estilo():
 
-QMenuBar::item {
-    padding: 5px 12px;
-    border-radius: 4px;
-    background: transparent;
-}
+    ruta = ruta_recurso(
+        "styles/balanza.qss"
+    )
 
-QMenuBar::item:selected {
-    background-color: #2563eb;
-    color: white;
-}
+    with open(
+        ruta,
+        "r",
+        encoding="utf-8"
+    ) as archivo:
 
-QMenu {
-    background-color: #ffffff;
-    border: 1px solid #d1d5db;
-    padding: 4px;
-}
-
-QMenu::item {
-    padding: 6px 28px 6px 24px;
-    border-radius: 4px;
-}
-
-QMenu::item:selected {
-    background-color: #2563eb;
-    color: white;
-}
-
-QMenu::separator {
-    height: 1px;
-    background: #e5e7eb;
-    margin: 4px 8px;
-}
-
-/* ---------------- GRUPOS ---------------- */
-QGroupBox {
-    background-color: #ffffff;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    margin-top: 14px;
-    padding: 16px 12px 10px 12px;
-    font-weight: bold;
-}
-
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 12px;
-    padding: 0 6px;
-    color: #374151;
-}
-
-/* ---------------- ETIQUETAS ---------------- */
-QLabel#etiqueta {
-    color: #374151;
-    font-weight: 600;
-}
-
-/* ---------------- CAMPOS ---------------- */
-QLineEdit,
-QComboBox,
-QSpinBox {
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 4px 8px;
-    background-color: #ffffff;
-    min-height: 24px;
-}
-
-QLineEdit:focus,
-QComboBox:focus,
-QSpinBox:focus {
-    border: 1px solid #2563eb;
-}
-
-QLineEdit[readOnly="true"] {
-    background-color: #f3f4f6;
-    color: #374151;
-    font-weight: bold;
-}
-
-/* ---------------- BOTONES ---------------- */
-QPushButton {
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 7px 14px;
-    background-color: #ffffff;
-    font-weight: 600;
-}
-
-QPushButton:hover {
-    background-color: #eff6ff;
-    border-color: #93c5fd;
-}
-
-QPushButton:pressed {
-    background-color: #dbeafe;
-}
-
-QPushButton:disabled {
-    color: #9ca3af;
-    background-color: #f3f4f6;
-}
-
-QPushButton#btn_iniciar,
-QPushButton#btn_detener,
-QPushButton#btn_guardar,
-QPushButton#btn_capturar,
-QPushButton#btn_pendientes {
-    border: none;
-    color: white;
-    font-weight: bold;
-}
-
-QPushButton#btn_iniciar {
-    background-color: #16a34a;
-    font-size: 14px;
-}
-
-QPushButton#btn_iniciar:hover {
-    background-color: #15803d;
-}
-
-QPushButton#btn_detener {
-    background-color: #dc2626;
-    font-size: 14px;
-}
-
-QPushButton#btn_detener:hover {
-    background-color: #b91c1c;
-}
-
-QPushButton#btn_iniciar:disabled,
-QPushButton#btn_detener:disabled,
-QPushButton#btn_guardar:disabled,
-QPushButton#btn_capturar:disabled,
-QPushButton#btn_pendientes:disabled {
-    background-color: #d1d5db;
-    color: #6b7280;
-}
-
-QPushButton#btn_capturar {
-    background-color: #2563eb;
-    font-size: 18px;
-    padding: 12px 20px;
-}
-
-QPushButton#btn_capturar:hover {
-    background-color: #1d4ed8;
-}
-
-QPushButton#btn_capturar:pressed {
-    background-color: #1e40af;
-}
-
-QPushButton#btn_guardar {
-    background-color: #16a34a;
-    font-size: 15px;
-}
-
-QPushButton#btn_guardar:hover {
-    background-color: #15803d;
-}
-
-QPushButton#btn_pendientes {
-    background-color: #f59e0b;
-}
-
-QPushButton#btn_pendientes:hover {
-    background-color: #d97706;
-}
-
-/* ---------------- PESO ---------------- */
-QLabel#lbl_peso {
-    background-color: #0b1220;
-    color: #22ff88;
-    border: 3px solid #1f2937;
-    border-radius: 10px;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 64px;
-    font-weight: bold;
-    padding: 10px;
-}
-
-/* ---------------- TABLA ---------------- */
-QTableWidget {
-    background-color: #ffffff;
-    alternate-background-color: #f9fafb;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    gridline-color: #e5e7eb;
-    selection-background-color: #dbeafe;
-    selection-color: #111827;
-}
-
-QTableWidget::item {
-    padding: 4px;
-}
-
-QHeaderView::section {
-    background-color: #1f2937;
-    color: white;
-    padding: 6px;
-    border: none;
-    font-weight: bold;
-}
-
-/* ---------------- LOG ---------------- */
-QPlainTextEdit {
-    background-color: #111827;
-    color: #d1d5db;
-    border-radius: 6px;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 12px;
-}
-
-/* ---------------- BARRA DE ESTADO ---------------- */
-QStatusBar {
-    background-color: #ffffff;
-    border-top: 1px solid #d1d5db;
-}
-
-QStatusBar::item {
-    border: none;
-}
-"""
+        return archivo.read()
 
 # (texto, fondo, color texto, borde)
 ESTADOS_OPERACION = {
@@ -303,15 +91,15 @@ class BalanzaView(QMainWindow):
         self.setMinimumSize(1000, 600)
         self.resize(1180, 720)
 
-        self.setStyleSheet(ESTILO)
+        self.setStyleSheet(cargar_estilo())
 
         self.crear_menu()
         self.crear_interfaz()
         self.crear_configuracion_avanzada()
         self.crear_barra_estado()
 
-        if MOSTRAR_DATOS_DEMO:
-            self._cargar_demo()
+        # Formulario bloqueado al iniciar
+        self.bloquear_formulario(True)
 
     # HELPERS DE UI
     @staticmethod
@@ -523,6 +311,9 @@ class BalanzaView(QMainWindow):
         self.btn_salir = self._boton("🚪  SALIR")
 
         self.btn_salir.clicked.connect(self.close)
+        self.btn_nuevo.clicked.connect(
+            self.nuevo_registro
+        )
 
         acciones.addWidget(self.btn_nuevo)
         acciones.addWidget(self.btn_guardar, 1)
@@ -535,6 +326,95 @@ class BalanzaView(QMainWindow):
 
         # SINCRONIZAR "LOTE ACTUAL"
         self.txt_lote.textChanged.connect(self._actualizar_lote_actual)
+
+    # FORMULARIO DE OPERACIÓN
+    def bloquear_formulario(self, bloquear=True):
+        """
+        Bloquea o desbloquea los campos de registro de la operación.
+        """
+
+        habilitado = not bloquear
+
+        campos = [
+            self.txt_lote,
+            self.txt_placa,
+            self.txt_carreta,
+            self.txt_chofer,
+            self.txt_brevete,
+            self.txt_proveedor,
+            self.txt_ruc_proveedor,
+            self.txt_guia_proveedor,
+            self.txt_transportista,
+            self.txt_ruc_transportista,
+            self.txt_guia_transportista,
+            self.txt_concesion,
+            self.txt_codigo,
+            self.txt_procedencia,
+            self.txt_producto,
+            self.txt_observacion,
+        ]
+
+        for campo in campos:
+            campo.setEnabled(habilitado)
+
+        # El ticket se mantiene bloqueado.
+        self.txt_ticket.setEnabled(False)
+
+    def nuevo_registro(self):
+        """
+        Prepara el formulario para registrar
+        una nueva operación.
+        """
+
+        # LIMPIAR CAMPOS
+        campos = [
+            self.txt_ticket,
+            self.txt_lote,
+            self.txt_placa,
+            self.txt_carreta,
+
+            self.txt_chofer,
+            self.txt_brevete,
+
+            self.txt_proveedor,
+            self.txt_ruc_proveedor,
+            self.txt_guia_proveedor,
+
+            self.txt_transportista,
+            self.txt_ruc_transportista,
+            self.txt_guia_transportista,
+
+            self.txt_concesion,
+            self.txt_codigo,
+
+            self.txt_procedencia,
+            self.txt_producto,
+
+            self.txt_observacion,
+        ]
+
+        for campo in campos:
+            campo.clear()
+
+        # LIMPIAR PESO
+        self.limpiar_peso()
+
+        # LIMPIAR TABLA
+        self.tabla_pesajes.setRowCount(0)
+
+        # LIMPIAR LOTE ACTUAL
+        self.lbl_lote_actual.setText(
+            "Lote actual: —"
+        )
+
+        # ESTADO
+        self.estado_operacion("proceso")
+
+        # DESBLOQUEAR FORMULARIO
+        self.bloquear_formulario(False)
+
+        # POSICIONAR CURSOR
+        self.txt_lote.setFocus()
 
     # GRUPO: DATOS DEL VEHÍCULO Y CARGA
     def _crear_grupo_datos(self):
@@ -1028,43 +908,6 @@ class BalanzaView(QMainWindow):
 
         self.lbl_lote_actual.setText(
             f"Lote actual: {texto.strip() or '—'}"
-        )
-
-    # DATOS DE DEMOSTRACIÓN
-    def _cargar_demo(self):
-
-        self.txt_ticket.setText("5093")
-        self.txt_lote.setText("510-2795")
-        self.txt_placa.setText("B4V-905")
-
-        self.txt_chofer.setText("CHECALLA PAYE FACUNDO")
-        self.txt_brevete.setText("U41482246")
-
-        self.txt_proveedor.setText("MINERA E INVERSIONES LUIS & CIELO E.I.R.L")
-        self.txt_ruc_proveedor.setText("20613947575")
-        self.txt_guia_proveedor.setText("EG07-000139")
-
-        self.txt_transportista.setText("TRANSPORTES KORIANCAPRIA E.I.R.L")
-        self.txt_ruc_transportista.setText("20612957593")
-        self.txt_guia_transportista.setText("EG03-000132")
-
-        self.txt_concesion.setText("SANTIAGO DE COMPOSTELA N° 6")
-        self.txt_codigo.setText("10000151Y01")
-
-        self.txt_procedencia.setText("ATICO CARAVELI AREQUIPA")
-        self.txt_producto.setText("MINERAL AURÍFERO SULFURADO")
-
-        self.cargar_pesajes(
-            [
-                ("510-2795", "76", "07/10/2025 09:56", "23,030",
-                "07/10/2025 11:12", "12,590", "10,440", "COMPLETO"),
-
-                ("510-2796", "54", "07/10/2025 11:12", "12,590",
-                "07/10/2025 11:35", "7,500", "5,090", "COMPLETO"),
-
-                ("510-2797", "38", "07/10/2025 11:35", "7,500",
-                "—", "—", "—", "PENDIENTE"),
-            ]
         )
 
     # CERRAR VENTANA
