@@ -21,7 +21,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QGridLayout,
     QGroupBox,
-    QFormLayout,
     QFrame,
     QStatusBar,
     QMessageBox,
@@ -35,6 +34,7 @@ import sys
 
 from views.configuracion_view import ConfiguracionView
 from views.configuracion_lotes_view import ConfiguracionLotesView
+from views.combo_busqueda import ComboBusqueda
 
 
 def ruta_recurso(ruta):
@@ -86,31 +86,36 @@ class BalanzaView(QMainWindow):
 
         self.setStyleSheet(cargar_estilo())
 
+        # Datos maestros (vacíos hasta que el controller los cargue)
+        self.maestros = {}
+
+        # Selecciones internas
+        # (se definen ANTES de crear la interfaz porque los combos
+        # pueden disparar señales al construirse)
+        self.vehiculo_seleccionado = None
+        self.carreta_seleccionada = None
+
+        self.proveedor_seleccionado = None
+        self.completer_proveedor = None
+        self.completer_ruc_proveedor = None
+
+        self.conductor_seleccionado = None
+        self.completer_chofer = None
+        self.completer_brevete = None
+
+        self.transportista_seleccionado = None
+        self.completer_transportista = None
+        self.completer_ruc_transportista = None
+
+        self.concesion_seleccionada = None
+        self.completer_concesion = None
+        self.completer_codigo = None
+
         self.crear_menu()
         self.crear_interfaz()
         self.configuracion = ConfiguracionView(self)
         self.configuracion_lotes = ConfiguracionLotesView(self)
         self.crear_barra_estado()
-
-        # Autocompletado de proveedores
-        self.proveedor_seleccionado = None
-        self.completer_proveedor = None
-        self.completer_ruc_proveedor = None
-
-        # Chofer
-        self.conductor_seleccionado = None
-        self.completer_chofer = None
-        self.completer_brevete = None
-
-        # Transportista
-        self.transportista_seleccionado = None
-        self.completer_transportista = None
-        self.completer_ruc_transportista = None
-
-        # Concesión
-        self.concesion_seleccionada = None
-        self.completer_concesion = None
-        self.completer_codigo = None
 
         # Formulario bloqueado al iniciar
         self.bloquear_formulario(True)
@@ -281,8 +286,14 @@ class BalanzaView(QMainWindow):
 
         self.txt_ticket = self._campo(centrado=True, solo_lectura=True)
         self.txt_lote = self._campo(centrado=True)
-        self.txt_placa = self._campo(centrado=True)
-        self.txt_carreta = self._campo(centrado=True)
+
+        # Combos con búsqueda (ver views/combo_busqueda.py)
+        self.txt_placa = ComboBusqueda("Seleccionar placa")
+        self.txt_carreta = ComboBusqueda("Seleccionar carreta")
+
+        # Se conectan UNA sola vez, aquí
+        self.txt_placa.currentIndexChanged.connect(self._seleccionar_vehiculo)
+        self.txt_carreta.currentIndexChanged.connect(self._seleccionar_carreta)
 
         self.lbl_estado_operacion = QLabel()
         self.lbl_estado_operacion.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -380,11 +391,11 @@ class BalanzaView(QMainWindow):
         Prepara la interfaz para un nuevo pesaje.
         """
 
+        # Solo campos de texto (QLineEdit).
+        # Los combos NO van aquí: QComboBox.clear() borra sus items.
         campos = [
             self.txt_ticket,
             self.txt_lote,
-            self.txt_placa,
-            self.txt_carreta,
             self.txt_chofer,
             self.txt_brevete,
             self.txt_proveedor,
@@ -402,6 +413,13 @@ class BalanzaView(QMainWindow):
 
         for campo in campos:
             campo.clear()
+
+        # Combos: quita la selección y el texto, conserva los items
+        self.txt_placa.limpiar()
+        self.txt_carreta.limpiar()
+
+        self.vehiculo_seleccionado = None
+        self.carreta_seleccionada = None
 
         self.conductor_seleccionado = None
         self.proveedor_seleccionado = None
@@ -414,62 +432,9 @@ class BalanzaView(QMainWindow):
 
         self.mostrar_ticket(ticket)
         self.txt_lote.setText(lote or "")
-        
+
         self.estado_operacion("proceso")
         self.bloquear_formulario(False)
-        self.txt_lote.setFocus()
-
-    def nuevo_registro(self):
-        """
-        Prepara el formulario para registrar
-        una nueva operación.
-        """
-
-        # LIMPIAR CAMPOS
-        campos = [
-            self.txt_ticket,
-            self.txt_lote,
-            self.txt_placa,
-            self.txt_carreta,
-            self.txt_chofer,
-            self.txt_brevete,
-            self.txt_proveedor,
-            self.txt_ruc_proveedor,
-            self.txt_guia_proveedor,
-            self.txt_transportista,
-            self.txt_ruc_transportista,
-            self.txt_guia_transportista,
-            self.txt_concesion,
-            self.txt_codigo,
-            self.txt_procedencia,
-            self.txt_producto,
-            self.txt_observacion,
-        ]
-
-        for campo in campos:
-            campo.clear()
-
-        self.conductor_seleccionado = None
-        self.proveedor_seleccionado = None
-        self.transportista_seleccionado = None
-        self.concesion_seleccionada = None
-
-        # LIMPIAR PESO
-        self.limpiar_peso()
-
-        # LIMPIAR TABLA
-        self.tabla_pesajes.setRowCount(0)
-
-        # LIMPIAR LOTE ACTUAL
-        self.lbl_lote_actual.setText("Lote actual: —")
-
-        # ESTADO
-        self.estado_operacion("proceso")
-
-        # DESBLOQUEAR FORMULARIO
-        self.bloquear_formulario(False)
-
-        # POSICIONAR CURSOR
         self.txt_lote.setFocus()
 
     # GRUPO: DATOS DEL VEHÍCULO Y CARGA
@@ -652,19 +617,11 @@ class BalanzaView(QMainWindow):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
 
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
 
         layout.addWidget(self.tabla_pesajes)
 
         return grupo
-
-        # Va en un diálogo propio: abrirla no cambia el tamaño de
-        # la ventana principal y el log sigue disponible mientras
-        # el sistema está funcionando.
-
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(10)
 
     # BARRA DE ESTADO
     def crear_barra_estado(self):
@@ -802,7 +759,7 @@ class BalanzaView(QMainWindow):
     # TABLA DE PESAJES
     def cargar_pesajes(self, filas):
         """
-        filas: lista de tuplas de 7 valores:
+        filas: lista de tuplas de 8 valores:
         (lote, sacos, fecha_hora_1, peso_1, fecha_hora_2, peso_2, neto, estado)
         """
 
@@ -825,6 +782,7 @@ class BalanzaView(QMainWindow):
 
                 self.tabla_pesajes.setItem(r, c, item)
 
+    # MAESTROS
     def cargar_maestros(
         self, vehiculos, carretas, conductores, proveedores, transportistas, concesiones
     ):
@@ -841,6 +799,14 @@ class BalanzaView(QMainWindow):
             "concesiones": concesiones,
         }
 
+        # Combos de vehículo y carreta
+        indice = self.txt_placa.cargar(vehiculos)
+        self._seleccionar_vehiculo(indice)
+
+        indice = self.txt_carreta.cargar(carretas)
+        self._seleccionar_carreta(indice)
+
+        # Autocompletados
         self._configurar_autocompletado_proveedor()
         self._configurar_autocompletado_chofer()
         self._configurar_autocompletado_transportista()
@@ -859,12 +825,9 @@ class BalanzaView(QMainWindow):
         if not proveedores:
             return
 
-        # ==========================================================
         # AUTOCOMPLETADO: PROVEEDOR
         # Principal: nombre
         # Complementario: RUC
-        # ==========================================================
-
         opciones_proveedor = [
             f"{proveedor[1]}\n{proveedor[2]}" for proveedor in proveedores
         ]
@@ -924,15 +887,8 @@ class BalanzaView(QMainWindow):
             f"{conductor[1]}\n{conductor[2]}" for conductor in conductores
         ]
 
-        modelo_chofer = QStringListModel(
-            opciones_chofer,
-            self,
-        )
-
-        self.completer_chofer = QCompleter(
-            modelo_chofer,
-            self,
-        )
+        modelo_chofer = QStringListModel(opciones_chofer, self)
+        self.completer_chofer = QCompleter(modelo_chofer, self)
         self.completer_chofer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.completer_chofer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.completer_chofer.setCompletionMode(
@@ -951,15 +907,8 @@ class BalanzaView(QMainWindow):
             f"{conductor[2]}\n{conductor[1]}" for conductor in conductores
         ]
 
-        modelo_brevete = QStringListModel(
-            opciones_brevete,
-            self,
-        )
-
-        self.completer_brevete = QCompleter(
-            modelo_brevete,
-            self,
-        )
+        modelo_brevete = QStringListModel(opciones_brevete, self)
+        self.completer_brevete = QCompleter(modelo_brevete, self)
         self.completer_brevete.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.completer_brevete.setFilterMode(Qt.MatchFlag.MatchContains)
         self.completer_brevete.setCompletionMode(
@@ -992,15 +941,8 @@ class BalanzaView(QMainWindow):
             for transportista in transportistas
         ]
 
-        modelo_transportista = QStringListModel(
-            opciones_transportista,
-            self,
-        )
-
-        self.completer_transportista = QCompleter(
-            modelo_transportista,
-            self,
-        )
+        modelo_transportista = QStringListModel(opciones_transportista, self)
+        self.completer_transportista = QCompleter(modelo_transportista, self)
         self.completer_transportista.setCaseSensitivity(
             Qt.CaseSensitivity.CaseInsensitive
         )
@@ -1008,7 +950,6 @@ class BalanzaView(QMainWindow):
         self.completer_transportista.setCompletionMode(
             QCompleter.CompletionMode.PopupCompletion
         )
-
         self.txt_transportista.setCompleter(self.completer_transportista)
 
         self.completer_transportista.activated[str].connect(
@@ -1025,15 +966,8 @@ class BalanzaView(QMainWindow):
             for transportista in transportistas
         ]
 
-        modelo_ruc = QStringListModel(
-            opciones_ruc,
-            self,
-        )
-
-        self.completer_ruc_transportista = QCompleter(
-            modelo_ruc,
-            self,
-        )
+        modelo_ruc = QStringListModel(opciones_ruc, self)
+        self.completer_ruc_transportista = QCompleter(modelo_ruc, self)
         self.completer_ruc_transportista.setCaseSensitivity(
             Qt.CaseSensitivity.CaseInsensitive
         )
@@ -1041,7 +975,6 @@ class BalanzaView(QMainWindow):
         self.completer_ruc_transportista.setCompletionMode(
             QCompleter.CompletionMode.PopupCompletion
         )
-
         self.txt_ruc_transportista.setCompleter(self.completer_ruc_transportista)
 
         self.completer_ruc_transportista.activated[str].connect(
@@ -1070,24 +1003,13 @@ class BalanzaView(QMainWindow):
             f"{concesion[1]}\n{concesion[2]}" for concesion in concesiones
         ]
 
-        modelo_concesion = QStringListModel(
-            opciones_concesion,
-            self,
-        )
-
-        self.completer_concesion = QCompleter(
-            modelo_concesion,
-            self,
-        )
-
+        modelo_concesion = QStringListModel(opciones_concesion, self)
+        self.completer_concesion = QCompleter(modelo_concesion, self)
         self.completer_concesion.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-
         self.completer_concesion.setFilterMode(Qt.MatchFlag.MatchContains)
-
         self.completer_concesion.setCompletionMode(
             QCompleter.CompletionMode.PopupCompletion
         )
-
         self.txt_concesion.setCompleter(self.completer_concesion)
 
         self.completer_concesion.activated[str].connect(
@@ -1103,24 +1025,13 @@ class BalanzaView(QMainWindow):
             f"{concesion[2]}\n{concesion[1]}" for concesion in concesiones
         ]
 
-        modelo_codigo = QStringListModel(
-            opciones_codigo,
-            self,
-        )
-
-        self.completer_codigo = QCompleter(
-            modelo_codigo,
-            self,
-        )
-
+        modelo_codigo = QStringListModel(opciones_codigo, self)
+        self.completer_codigo = QCompleter(modelo_codigo, self)
         self.completer_codigo.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-
         self.completer_codigo.setFilterMode(Qt.MatchFlag.MatchContains)
-
         self.completer_codigo.setCompletionMode(
             QCompleter.CompletionMode.PopupCompletion
         )
-
         self.txt_codigo.setCompleter(self.completer_codigo)
 
         self.completer_codigo.activated[str].connect(
@@ -1129,7 +1040,38 @@ class BalanzaView(QMainWindow):
             )
         )
 
+    # SELECCIÓN: VEHÍCULO Y CARRETA
+    def _seleccionar_vehiculo(self, indice):
+        """
+        Guarda internamente el vehículo seleccionado.
+        """
+
+        if indice < 0:
+            self.vehiculo_seleccionado = None
+            return
+
+        self.vehiculo_seleccionado = {
+            "id_vehiculo": self.txt_placa.itemData(indice),
+            "placa": self.txt_placa.itemText(indice),
+        }
+
+    def _seleccionar_carreta(self, indice):
+        """
+        Guarda internamente la carreta seleccionada.
+        """
+
+        if indice < 0:
+            self.carreta_seleccionada = None
+            return
+
+        self.carreta_seleccionada = {
+            "id_carreta": self.txt_carreta.itemData(indice),
+            "placa": self.txt_carreta.itemText(indice),
+        }
+
+    # SELECCIÓN: PROVEEDOR / CHOFER / TRANSPORTISTA / CONCESIÓN
     def _seleccionar_proveedor(self, texto):
+
         proveedores = self.maestros.get("proveedores", [])
 
         # Separar las dos líneas de la opción seleccionada
@@ -1146,23 +1088,11 @@ class BalanzaView(QMainWindow):
             nombre = proveedor[1]
             ruc = proveedor[2]
 
-            # Selección desde PROVEEDOR
-            # Principal = nombre
-            # Complementario = RUC
-            if dato_principal == nombre and dato_complementario == ruc:
-                self.proveedor_seleccionado = {
-                    "id_proveedor": id_proveedor,
-                    "nombre": nombre,
-                    "ruc": ruc,
-                }
-                self.txt_proveedor.setText(nombre)
-                self.txt_ruc_proveedor.setText(ruc)
-                return
-
-            # Selección desde RUC
-            # Principal = RUC
-            # Complementario = nombre
-            if dato_principal == ruc and dato_complementario == nombre:
+            # Selección desde PROVEEDOR: principal = nombre, complementario = RUC
+            # Selección desde RUC: principal = RUC, complementario = nombre
+            if (dato_principal == nombre and dato_complementario == ruc) or (
+                dato_principal == ruc and dato_complementario == nombre
+            ):
                 self.proveedor_seleccionado = {
                     "id_proveedor": id_proveedor,
                     "nombre": nombre,
@@ -1182,7 +1112,6 @@ class BalanzaView(QMainWindow):
 
         conductores = self.maestros.get("conductores", [])
 
-        # Separar las dos líneas de la opción seleccionada
         partes = texto.splitlines()
 
         if len(partes) < 2:
@@ -1197,25 +1126,11 @@ class BalanzaView(QMainWindow):
             nombre = conductor[1]
             brevete = conductor[2]
 
-            # Selección desde CHOFER
-            # Principal = nombre
-            # Complementario = brevete
-            if dato_principal == nombre and dato_complementario == brevete:
-                self.conductor_seleccionado = {
-                    "id_conductor": id_conductor,
-                    "nombre": nombre,
-                    "brevete": brevete,
-                }
-
-                self.txt_chofer.setText(nombre)
-                self.txt_brevete.setText(brevete)
-
-                return
-
-            # Selección desde BREVETE
-            # Principal = brevete
-            # Complementario = nombre
-            if dato_principal == brevete and dato_complementario == nombre:
+            # Desde CHOFER: principal = nombre, complementario = brevete
+            # Desde BREVETE: principal = brevete, complementario = nombre
+            if (dato_principal == nombre and dato_complementario == brevete) or (
+                dato_principal == brevete and dato_complementario == nombre
+            ):
                 self.conductor_seleccionado = {
                     "id_conductor": id_conductor,
                     "nombre": nombre,
@@ -1235,7 +1150,6 @@ class BalanzaView(QMainWindow):
 
         transportistas = self.maestros.get("transportistas", [])
 
-        # Separar las dos líneas de la opción seleccionada
         partes = texto.splitlines()
 
         if len(partes) < 2:
@@ -1250,25 +1164,11 @@ class BalanzaView(QMainWindow):
             nombre = transportista[1]
             ruc = transportista[2]
 
-            # Selección desde TRANSPORTISTA
-            # Principal = nombre
-            # Complementario = RUC
-            if dato_principal == nombre and dato_complementario == ruc:
-                self.transportista_seleccionado = {
-                    "id_transportista": id_transportista,
-                    "nombre": nombre,
-                    "ruc": ruc,
-                }
-
-                self.txt_transportista.setText(nombre)
-                self.txt_ruc_transportista.setText(ruc)
-
-                return
-
-            # Selección desde RUC
-            # Principal = RUC
-            # Complementario = nombre
-            if dato_principal == ruc and dato_complementario == nombre:
+            # Desde TRANSPORTISTA: principal = nombre, complementario = RUC
+            # Desde RUC: principal = RUC, complementario = nombre
+            if (dato_principal == nombre and dato_complementario == ruc) or (
+                dato_principal == ruc and dato_complementario == nombre
+            ):
                 self.transportista_seleccionado = {
                     "id_transportista": id_transportista,
                     "nombre": nombre,
@@ -1288,7 +1188,6 @@ class BalanzaView(QMainWindow):
 
         concesiones = self.maestros.get("concesiones", [])
 
-        # Separar las dos líneas de la opción seleccionada
         partes = texto.splitlines()
 
         if len(partes) < 2:
@@ -1303,25 +1202,11 @@ class BalanzaView(QMainWindow):
             nombre = concesion[1]
             codigo = concesion[2]
 
-            # Selección desde CONCESIÓN
-            # Principal = nombre
-            # Complementario = código
-            if dato_principal == nombre and dato_complementario == codigo:
-                self.concesion_seleccionada = {
-                    "id_concesion": id_concesion,
-                    "nombre": nombre,
-                    "codigo": codigo,
-                }
-
-                self.txt_concesion.setText(nombre)
-                self.txt_codigo.setText(codigo)
-
-                return
-
-            # Selección desde CÓDIGO
-            # Principal = código
-            # Complementario = nombre
-            if dato_principal == codigo and dato_complementario == nombre:
+            # Desde CONCESIÓN: principal = nombre, complementario = código
+            # Desde CÓDIGO: principal = código, complementario = nombre
+            if (dato_principal == nombre and dato_complementario == codigo) or (
+                dato_principal == codigo and dato_complementario == nombre
+            ):
                 self.concesion_seleccionada = {
                     "id_concesion": id_concesion,
                     "nombre": nombre,
@@ -1339,8 +1224,12 @@ class BalanzaView(QMainWindow):
         return {
             "ticket": self.txt_ticket.text().strip(),
             "lote": self.txt_lote.text().strip(),
-            "placa": self.txt_placa.text().strip(),
-            "carreta": self.txt_carreta.text().strip(),
+            "placa": self.txt_placa.currentText().strip(),
+            "carreta": self.txt_carreta.currentText().strip(),
+            # El ID se calcula con el texto actual del combo:
+            # None si la placa se escribió a mano y no está en la lista.
+            "id_vehiculo": self.txt_placa.id_actual(),
+            "id_carreta": self.txt_carreta.id_actual(),
             "chofer": self.txt_chofer.text().strip(),
             "brevete": self.txt_brevete.text().strip(),
             "proveedor": self.txt_proveedor.text().strip(),
@@ -1353,7 +1242,6 @@ class BalanzaView(QMainWindow):
             "codigo": self.txt_codigo.text().strip(),
             "procedencia": self.txt_procedencia.text().strip(),
             "producto": self.txt_producto.text().strip(),
-            "cantidad_sacos": self.txt_sacos.text().strip(),
             "observacion": self.txt_observacion.text().strip(),
         }
 
