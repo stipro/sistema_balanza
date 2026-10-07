@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 from config.settings import TICKET_INICIAL
+from datetime import datetime
 
 # UBICACIÓN DE LA BASE DE DATOS
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -87,6 +88,7 @@ def inicializar_base_datos():
                 id_pesaje INTEGER PRIMARY KEY AUTOINCREMENT,
                 uuid_pesaje TEXT NOT NULL UNIQUE,
                 ticket INTEGER NOT NULL UNIQUE,
+                lote TEXT NOT NULL UNIQUE,
                 id_vehiculo INTEGER NOT NULL,
                 id_carreta INTEGER,
                 id_conductor INTEGER,
@@ -128,6 +130,15 @@ def inicializar_base_datos():
 
                 FOREIGN KEY (id_concesion)
                     REFERENCES concesiones(id_concesion)
+            )""")
+
+        # CONFIGURACIÓN DE LOTES
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS configuracion_lotes (
+                id_configuracion INTEGER PRIMARY KEY CHECK (id_configuracion = 1),
+                proximo_correlativo INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )""")
 
         # PESAJES LOTES
@@ -327,6 +338,113 @@ def obtener_proximo_ticket():
 
     finally:
         conexion.close()
+
+
+def obtener_configuracion_lote():
+    conexion = obtener_conexion()
+
+    try:
+        cursor = conexion.cursor()
+
+        cursor.execute("""
+            SELECT
+                id_configuracion,
+                proximo_correlativo,
+                created_at,
+                updated_at
+            FROM configuracion_lotes
+            WHERE id_configuracion = 1
+        """)
+
+        return cursor.fetchone()
+
+    finally:
+        conexion.close()
+
+
+def configurar_correlativo_lote(correlativo):
+    if not isinstance(correlativo, int) or correlativo <= 0:
+        raise ValueError("El correlativo debe ser un número entero mayor que cero.")
+
+    ahora = datetime.now().isoformat(timespec="seconds")
+
+    conexion = obtener_conexion()
+
+    try:
+        cursor = conexion.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO configuracion_lotes (
+                id_configuracion,
+                proximo_correlativo,
+                created_at,
+                updated_at
+            )
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id_configuracion)
+            DO UPDATE SET
+                proximo_correlativo = excluded.proximo_correlativo,
+                updated_at = excluded.updated_at
+        """,
+            (correlativo, ahora, ahora),
+        )
+
+        conexion.commit()
+
+    finally:
+        conexion.close()
+
+
+def obtener_prefijo_lote(fecha=None):
+    if fecha is None:
+        fecha = datetime.now()
+
+    ultimo_digito_anio = str(fecha.year)[-1]
+    mes = f"{fecha.month:02d}"
+
+    return f"{ultimo_digito_anio}{mes}"
+
+
+def obtener_proximo_lote():
+    configuracion = obtener_configuracion_lote()
+
+    if configuracion is None:
+        return None
+
+    proximo_correlativo = configuracion[1]
+    prefijo = obtener_prefijo_lote()
+
+    return f"{prefijo}-{proximo_correlativo}"
+
+
+def consumir_correlativo_lote(conexion):
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT proximo_correlativo
+        FROM configuracion_lotes
+        WHERE id_configuracion = 1
+    """)
+
+    resultado = cursor.fetchone()
+
+    if resultado is None:
+        raise ValueError("No se ha configurado ningún correlativo para los lotes.")
+
+    correlativo = resultado[0]
+
+    cursor.execute(
+        """
+        UPDATE configuracion_lotes
+        SET
+            proximo_correlativo = ?,
+            updated_at = ?
+        WHERE id_configuracion = 1""",
+        (correlativo + 1, datetime.now().isoformat(timespec="seconds")),
+    )
+
+    return correlativo
 
 
 def obtener_vehiculos():

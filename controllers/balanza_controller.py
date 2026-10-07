@@ -8,7 +8,12 @@ from services.serial_balanza import SerialBalanza
 from services.serial_display import SerialDisplay
 from utils.parser_peso import ParserPeso
 
-from database.database import obtener_proximo_ticket
+from database.database import (
+    obtener_proximo_ticket,
+    obtener_proximo_lote,
+    configurar_correlativo_lote,
+    obtener_configuracion_lote,
+)
 
 from database.database import (
     obtener_vehiculos,
@@ -72,8 +77,20 @@ class BalanzaController:
         self.view.btn_detener.clicked.connect(self.detener)
         self.view.btn_nuevo.clicked.connect(self.nuevo_registro)
 
+        # Configuración de lotes
+        self.view.configuracion_lotes.btn_guardar.clicked.connect(
+            self.guardar_configuracion_lotes
+        )
+
         # Puertos seriales
         self.view.configuracion.btn_actualizar.clicked.connect(self.detectar_puertos)
+
+        # Configuración avanzada
+        self.view.act_configuracion.triggered.connect(self.view.mostrar_configuracion)
+
+        self.view.act_configuracion_lotes.triggered.connect(
+            self.mostrar_configuracion_lotes
+        )
 
         self.view.act_actualizar_puertos.triggered.connect(self.detectar_puertos)
 
@@ -428,6 +445,43 @@ class BalanzaController:
         self.view.btn_detener.setEnabled(False)
         self.view.bloquear_configuracion(False)
 
+    def guardar_configuracion_lotes(self):
+
+        correlativo = self.view.configuracion_lotes.spin_correlativo.value()
+
+        try:
+
+            configurar_correlativo_lote(correlativo)
+
+            self.view.configuracion_lotes.ocultar_aviso()
+
+            QMessageBox.information(
+                self.view,
+                "Configuración de lotes",
+                f"Configuración guardada correctamente.\n\n"
+                f"Próximo lote: "
+                f"{self.view.configuracion_lotes.txt_proximo_lote.text()}",
+            )
+
+            self.view.configuracion_lotes.accept()
+
+        except Exception as e:
+
+            QMessageBox.critical(
+                self.view,
+                "Error",
+                f"No se pudo guardar la configuración.\n\n{e}",
+            )
+
+    def mostrar_configuracion_lotes(self):
+        configuracion = obtener_configuracion_lote()
+        if configuracion is None:
+            self.view.configuracion_lotes.mostrar_sin_configuracion()
+        else:
+            correlativo = configuracion[1]
+            self.view.configuracion_lotes.cargar_correlativo(correlativo)
+        self.view.configuracion_lotes.exec()
+
     # LOG
     def log(self, texto):
 
@@ -436,8 +490,12 @@ class BalanzaController:
     def nuevo_registro(self):
 
         proximo_ticket = obtener_proximo_ticket()
+        proximo_lote = obtener_proximo_lote()
 
-        self.view.preparar_nuevo_registro(proximo_ticket)
+        self.view.preparar_nuevo_registro(
+            proximo_ticket,
+            proximo_lote,
+        )
 
     def cargar_maestros(self):
         """

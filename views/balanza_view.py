@@ -34,6 +34,7 @@ from pathlib import Path
 import sys
 
 from views.configuracion_view import ConfiguracionView
+from views.configuracion_lotes_view import ConfiguracionLotesView
 
 
 def ruta_recurso(ruta):
@@ -88,6 +89,7 @@ class BalanzaView(QMainWindow):
         self.crear_menu()
         self.crear_interfaz()
         self.configuracion = ConfiguracionView(self)
+        self.configuracion_lotes = ConfiguracionLotesView(self)
         self.crear_barra_estado()
 
         # Autocompletado de proveedores
@@ -191,6 +193,11 @@ class BalanzaView(QMainWindow):
         self.act_configuracion.setShortcut(QKeySequence("Ctrl+,"))
 
         menu_config.addAction(self.act_configuracion)
+
+        self.act_configuracion_lotes = QAction("Configuración de lotes", self)
+
+        menu_config.addAction(self.act_configuracion_lotes)
+
         menu_config.addSeparator()
 
         self.act_actualizar_puertos = QAction("Actualizar puertos", self)
@@ -368,7 +375,7 @@ class BalanzaView(QMainWindow):
     def mostrar_ticket(self, ticket):
         self.txt_ticket.setText(str(ticket))
 
-    def preparar_nuevo_registro(self, ticket):
+    def preparar_nuevo_registro(self, ticket, lote):
         """
         Prepara la interfaz para un nuevo pesaje.
         """
@@ -404,7 +411,10 @@ class BalanzaView(QMainWindow):
         self.limpiar_peso()
         self.tabla_pesajes.setRowCount(0)
         self.lbl_lote_actual.setText("Lote actual: —")
+
         self.mostrar_ticket(ticket)
+        self.txt_lote.setText(lote or "")
+        
         self.estado_operacion("proceso")
         self.bloquear_formulario(False)
         self.txt_lote.setFocus()
