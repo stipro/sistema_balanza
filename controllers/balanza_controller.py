@@ -8,21 +8,21 @@ from services.serial_balanza import SerialBalanza
 from services.serial_display import SerialDisplay
 from utils.parser_peso import ParserPeso
 
-from database.database import (
-    obtener_proximo_ticket,
-    obtener_proximo_lote,
-    configurar_correlativo_lote,
-    obtener_configuracion_lote,
+from models.base import ReglaNegocioError
+from models.maestros import (
+    VehiculoModel,
+    CarretaModel,
+    ConductorModel,
+    ProveedorModel,
+    TransportistaModel,
+    ConcesionModel,
 )
-
-from database.database import (
-    obtener_vehiculos,
-    obtener_carretas,
-    obtener_conductores,
-    obtener_proveedores,
-    obtener_transportistas,
-    obtener_concesiones,
+from models.pesajes import (
+    ConfiguracionLotesModel,
+    PesajeModel,
 )
+from services.pesaje_service import PesajeService
+from views.pendientes_view import PendientesView
 
 from config.settings import (
     BAUDRATE_BALANZA_DEFAULT,
@@ -34,8 +34,6 @@ from config.settings import (
     PUERTO_DISPLAY_DEFAULT,
 )
 
-# CONTROLADOR PRINCIPAL
-
 
 class BalanzaController:
 
@@ -43,49 +41,77 @@ class BalanzaController:
 
         self.view = view
 
-        # SERVICIOS SERIAL
+        # ==========================================================
+        # SERIAL
+        # ==========================================================
+
         self.balanza = None
         self.display = None
 
-        # MAESTROS
-        self.vehiculos = []
-        self.carretas = []
-        self.conductores = []
-        self.proveedores = []
-        self.transportistas = []
-        self.concesiones = []
-
-        self.cargar_maestros()
-
-        # ESTADOS
         self.balanza_comunicando = False
         self.esperando_balanza = False
 
-        # TIMER DE LECTURA
+        # Último peso válido recibido de la balanza.
+        # Se utiliza cuando el usuario presiona "Capturar peso".
+        self.ultimo_peso = None
+
+        # ==========================================================
+        # INGRESO ACTUAL
+        # ==========================================================
+
+        self.ingreso_actual = None
+        # {
+        #     "id_pesaje": int,
+        #     "ticket": int
+        # }
+
+        # ==========================================================
+        # CARGAR DATOS INICIALES
+        # ==========================================================
+
+        self.cargar_maestros()
+        self._verificar_pendientes()
+
+        # ==========================================================
+        # TIMER DE LECTURA DE BALANZA
+        # ==========================================================
+
         self.timer = QTimer()
         self.timer.setInterval(INTERVALO_LECTURA_MS)
         self.timer.timeout.connect(self.procesar_balanza)
 
-        # TIMER DE INICIO
+        # ==========================================================
+        # TIMER DE ESPERA INICIAL
+        # ==========================================================
+
         self.timer_inicio = QTimer()
         self.timer_inicio.setSingleShot(True)
         self.timer_inicio.setInterval(TIMEOUT_INICIO_MS)
         self.timer_inicio.timeout.connect(self.error_inicio)
 
+        # ==========================================================
         # EVENTOS DE LA VIEW
+        # ==========================================================
+
         self.view.btn_iniciar.clicked.connect(self.iniciar)
         self.view.btn_detener.clicked.connect(self.detener)
+        self.view.cerrando.connect(self.cerrar)
+
+        # Ingreso
         self.view.btn_nuevo.clicked.connect(self.nuevo_registro)
+        self.view.btn_agregar_lote.clicked.connect(self.agregar_lote)
+        self.view.btn_capturar.clicked.connect(self.capturar_peso)
+        self.view.btn_guardar.clicked.connect(self.guardar_ingreso)
+        self.view.btn_pendientes.clicked.connect(self.mostrar_pendientes)
 
         # Configuración de lotes
         self.view.configuracion_lotes.btn_guardar.clicked.connect(
             self.guardar_configuracion_lotes
         )
 
-        # Puertos seriales
+        # Configuración serial
         self.view.configuracion.btn_actualizar.clicked.connect(self.detectar_puertos)
 
-        # Configuración avanzada
         self.view.act_configuracion.triggered.connect(self.view.mostrar_configuracion)
 
         self.view.act_configuracion_lotes.triggered.connect(
@@ -94,92 +120,701 @@ class BalanzaController:
 
         self.view.act_actualizar_puertos.triggered.connect(self.detectar_puertos)
 
-        # Datos maestros
+        # Maestros
         self.view.btn_actualizar_maestros.clicked.connect(self.actualizar_maestros)
 
+        # ==========================================================
         # DETECTAR PUERTOS AL INICIAR
+        # ==========================================================
+
         self.detectar_puertos()
 
-    # DETECTAR PUERTOS
-    def detectar_puertos(self):
+    # ==================================================================
+    # MAESTROS
+    # ==================================================================
 
-        # Si el sistema está esperando comunicación,
-        # no modificar los puertos.
+    def cargar_maestros(self):
+        """
+        Carga los maestros activos desde SQLite y los entrega a la View.
+
+        Los maestros se manejan mediante sus modelos.
+        No se consulta directamente la base de datos desde el controller.
+        """
+
+        self.view.cargar_maestros(
+            VehiculoModel.activos(),
+            CarretaModel.activos(),
+            ConductorModel.activos(),
+            ProveedorModel.activos(),
+            TransportistaModel.activos(),
+            ConcesionModel.activos(),
+        )
+
+    def actualizar_maestros(self):
+        """
+        Recarga los maestros desde SQLite.
+        """
+
+        try:
+            self.cargar_maestros()
+            self.log("[OK] Maestros recargados desde SQLite.")
+
+        except Exception as e:
+            self.log(f"[ERROR MAESTROS] {e}")
+
+            QMessageBox.warning(
+                self.view,
+                "Actualizar maestros",
+                f"No se pudieron actualizar los maestros.\n\n{e}",
+            )
+
+    # ==================================================================
+    # CONFIGURACIÓN DE LOTES
+    # ==================================================================
+
+    def guardar_configuracion_lotes(self):
+        """
+        Guarda el próximo correlativo de lotes.
+        """
+
+        correlativo = self.view.configuracion_lotes.spin_correlativo.value()
+
+        try:
+
+            ConfiguracionLotesModel.guardar(correlativo)
+
+            self.view.configuracion_lotes.ocultar_aviso()
+
+            QMessageBox.information(
+                self.view,
+                "Configuración de lotes",
+                (
+                    "Configuración guardada correctamente.\n\n"
+                    f"Próximo lote: "
+                    f"{ConfiguracionLotesModel.proximo_lote()}"
+                ),
+            )
+
+            self.view.configuracion_lotes.accept()
+
+        except ReglaNegocioError as e:
+
+            QMessageBox.warning(
+                self.view,
+                "Configuración de lotes",
+                str(e),
+            )
+
+    def mostrar_configuracion_lotes(self):
+        """
+        Abre la ventana de configuración de lotes.
+        """
+
+        config = ConfiguracionLotesModel.get()
+
+        if config is None:
+
+            self.view.configuracion_lotes.mostrar_sin_configuracion()
+
+        else:
+
+            self.view.configuracion_lotes.cargar_correlativo(
+                config["proximo_correlativo"]
+            )
+
+        self.view.configuracion_lotes.exec()
+
+    # INGRESO
+    def nuevo_registro(self):
+        """
+        Inicia un nuevo ingreso EN_PROCESO.
+
+        Si todavía no existe configuración de lotes,
+        obliga a configurarla antes de crear el ticket.
+        """
+
+        # ==============================================================
+        # 1. Verificar configuración de lotes
+        # ==============================================================
+
+        config = ConfiguracionLotesModel.get()
+
+        if config is None:
+
+            QMessageBox.information(
+                self.view,
+                "Configuración requerida",
+                (
+                    "No se ha configurado el correlativo de lotes.\n\n"
+                    "Configure el correlativo inicial antes de iniciar "
+                    "un nuevo pesaje."
+                ),
+            )
+
+            # Abrir automáticamente la configuración de lotes.
+            self.mostrar_configuracion_lotes()
+
+            # Verificar nuevamente después de cerrar la ventana.
+            config = ConfiguracionLotesModel.get()
+
+            # El usuario canceló o no guardó la configuración.
+            if config is None:
+                return
+
+        # ==============================================================
+        # 2. Limpiar ingreso vacío anterior
+        # ==============================================================
+
+        self._limpiar_ingreso_vacio()
+
+        # ==============================================================
+        # 3. Crear nuevo ingreso
+        # ==============================================================
+
+        try:
+
+            ingreso = PesajeService.crear_ingreso(equipo="PC-1")
+
+            self.ingreso_actual = {
+                "id_pesaje": ingreso["id_pesaje"],
+                "ticket": ingreso["ticket"],
+            }
+
+            # Limpiar peso temporal anterior.
+            self.ultimo_peso = None
+
+            # ==========================================================
+            # 4. Obtener el próximo lote
+            # ==========================================================
+
+            proximo_lote = ConfiguracionLotesModel.proximo_lote()
+
+            # ==========================================================
+            # 5. Preparar la interfaz
+            # ==========================================================
+
+            self.view.preparar_nuevo_registro(
+                ingreso["ticket"],
+                proximo_lote,
+            )
+
+            self.log(f"[NUEVO] Ticket {ingreso['ticket']} creado " f"(pendiente).")
+
+        except ReglaNegocioError as e:
+
+            QMessageBox.warning(
+                self.view,
+                "Nuevo ingreso",
+                str(e),
+            )
+
+    def _limpiar_ingreso_vacio(self):
+        """
+        Elimina únicamente el ingreso actual si todavía está vacío.
+
+        Si ya tiene lotes/capturas, PesajeModel no permitirá eliminarlo
+        y quedará como ingreso pendiente.
+        """
+
+        if not self.ingreso_actual:
+            return
+
+        try:
+
+            PesajeModel.delete_by_id(self.ingreso_actual["id_pesaje"])
+
+            self.log(
+                f"[INFO] Ticket " f"{self.ingreso_actual['ticket']} vacío eliminado."
+            )
+
+        except ReglaNegocioError:
+
+            # Tenía información asociada.
+            # Debe conservarse como pendiente.
+            pass
+
+        self.ingreso_actual = None
+
+    def _sincronizar_datos_generales(self):
+        """
+        Lee los datos seleccionados en la View y los guarda
+        en la tabla pesajes.
+        """
+
+        if not self.ingreso_actual:
+            return
+
+        datos = {
+            "id_vehiculo": self.view.txt_placa.id_actual(),
+            "id_carreta": self.view.txt_carreta.id_actual(),
+            "id_conductor": (self.view.conductor_seleccionado or {}).get(
+                "id_conductor"
+            ),
+            "id_transportista": (self.view.transportista_seleccionado or {}).get(
+                "id_transportista"
+            ),
+        }
+
+        PesajeService.actualizar_ingreso(
+            self.ingreso_actual["id_pesaje"],
+            datos,
+        )
+
+    # ==================================================================
+    # LOTES
+    # ==================================================================
+
+    def agregar_lote(self):
+        """
+        Agrega un lote al ingreso actual.
+        """
+
+        if not self.ingreso_actual:
+
+            QMessageBox.warning(
+                self.view,
+                "Lote",
+                "Presione NUEVO primero.",
+            )
+
+            return
+
+        datos = self.view.obtener_datos_lote()
+
+        if datos["id_proveedor"] is None:
+
+            QMessageBox.warning(
+                self.view,
+                "Proveedor",
+                (
+                    "Seleccione el proveedor desde la lista "
+                    "desplegable (no escriba uno nuevo a mano)."
+                ),
+            )
+
+            return
+
+        try:
+
+            # Antes de crear el lote aseguramos que los datos
+            # generales del camión estén guardados.
+            self._sincronizar_datos_generales()
+
+            lote = PesajeService.agregar_lote(
+                self.ingreso_actual["id_pesaje"],
+                datos,
+            )
+
+            self.log(
+                f"[LOTE] {lote['lote']} agregado al ticket "
+                f"{self.ingreso_actual['ticket']}."
+            )
+
+            self.view.limpiar_campos_lote()
+
+            self.view.mostrar_proximo_lote(ConfiguracionLotesModel.proximo_lote())
+
+            self._refrescar_lotes()
+
+        except ReglaNegocioError as e:
+
+            QMessageBox.warning(
+                self.view,
+                "Agregar lote",
+                str(e),
+            )
+
+    # ==================================================================
+    # CAPTURA DE PESO
+    # ==================================================================
+
+    def capturar_peso(self):
+        """
+        Registra el último peso válido recibido de la balanza.
+
+        La asignación del peso a bruto/tara la realiza PesajeService.
+        """
+
+        if not self.ingreso_actual:
+
+            QMessageBox.warning(
+                self.view,
+                "Captura",
+                "Presione NUEVO primero.",
+            )
+
+            return
+
+        if not self.balanza_comunicando or self.ultimo_peso is None:
+
+            QMessageBox.warning(
+                self.view,
+                "Captura",
+                "No hay peso estable de la balanza.",
+            )
+
+            return
+
+        try:
+
+            # Guardar datos generales antes de capturar.
+            self._sincronizar_datos_generales()
+
+            resultado = PesajeService.registrar_captura(
+                self.ingreso_actual["id_pesaje"],
+                self.ultimo_peso,
+            )
+
+            detalle = f"[CAPTURA #{resultado['secuencia']}] " f"{resultado['peso']} kg"
+
+            if resultado["bruto_de"]:
+
+                detalle += f" -> BRUTO de " f"{resultado['bruto_de']}"
+
+            if resultado["tara_de"]:
+
+                detalle += f" -> TARA de " f"{resultado['tara_de']}"
+
+            if resultado["neto"] is not None:
+
+                detalle += f" | NETO: " f"{resultado['neto']} kg"
+
+            self.log(detalle)
+
+            self._refrescar_lotes()
+
+        except ReglaNegocioError as e:
+
+            QMessageBox.warning(
+                self.view,
+                "Capturar peso",
+                str(e),
+            )
+
+    # ==================================================================
+    # GUARDAR / CONFIRMAR
+    # ==================================================================
+
+    def guardar_ingreso(self):
+        """
+        Confirma definitivamente el ingreso.
+
+        Las reglas reales de validación están en PesajeService.
+        """
+
+        if not self.ingreso_actual:
+
+            QMessageBox.warning(
+                self.view,
+                "Guardar",
+                "No hay ingreso activo.",
+            )
+
+            return
+
+        filas = PesajeService.filas_para_tabla(
+            self.ingreso_actual["id_pesaje"],
+            descendente=True,
+        )
+
+        completos = sum(1 for fila in filas if fila[7] == "COMPLETO")
+
+        respuesta = QMessageBox.question(
+            self.view,
+            "Confirmar ingreso",
+            (
+                f"¿Confirmar el ticket "
+                f"{self.ingreso_actual['ticket']}?\n\n"
+                f"Lotes: {len(filas)} | "
+                f"Completos: {completos}\n\n"
+                "Esta acción bloquea las capturas "
+                "de este ingreso."
+            ),
+            (QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No),
+        )
+
+        if respuesta != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+
+            # Guardar nuevamente los datos generales
+            # antes de confirmar.
+            self._sincronizar_datos_generales()
+
+            ingreso = PesajeService.confirmar_ingreso(self.ingreso_actual["id_pesaje"])
+
+            QMessageBox.information(
+                self.view,
+                "Ingreso confirmado",
+                (f"Ticket {ingreso['ticket']} " "confirmado correctamente."),
+            )
+
+            self.log(f"[GUARDAR] Ticket " f"{ingreso['ticket']} CONFIRMADO.")
+
+            self.view.estado_operacion("completo")
+
+            self.ingreso_actual = None
+            self.ultimo_peso = None
+
+            self.view.bloquear_formulario(True)
+
+        except ReglaNegocioError as e:
+
+            QMessageBox.warning(
+                self.view,
+                "No se puede guardar",
+                str(e),
+            )
+
+    # ==================================================================
+    # PESAJES PENDIENTES
+    # ==================================================================
+
+    def _verificar_pendientes(self):
+        """
+        Al iniciar el programa verifica si quedaron ingresos
+        EN_PROCESO de una sesión anterior.
+        """
+
+        try:
+
+            pendientes = PesajeService.ingresos_pendientes()
+
+            if pendientes:
+
+                self.log(
+                    f"[INFO] Hay {len(pendientes)} "
+                    "ingreso(s) pendiente(s). "
+                    "Use el botón PESAJES PENDIENTES "
+                    "para continuarlos."
+                )
+
+        except Exception as e:
+
+            self.log(f"[ERROR] No se pudieron verificar " f"los pendientes: {e}")
+
+    def mostrar_pendientes(self):
+        """
+        Permite recuperar un ingreso EN_PROCESO.
+        """
+
+        # Si el ticket actual está vacío, se elimina.
+        # Si ya tiene datos, permanece en SQLite.
+        self._limpiar_ingreso_vacio()
+
+        try:
+
+            pendientes = PesajeService.ingresos_pendientes()
+
+        except Exception as e:
+
+            QMessageBox.warning(
+                self.view,
+                "Pesajes pendientes",
+                f"No se pudieron cargar los pendientes.\n\n{e}",
+            )
+
+            return
+
+        if not pendientes:
+
+            QMessageBox.information(
+                self.view,
+                "Pesajes pendientes",
+                "No hay ingresos pendientes.",
+            )
+
+            return
+
+        dialogo = PendientesView(
+            pendientes,
+            self.view,
+        )
+
+        if dialogo.exec() != PendientesView.DialogCode.Accepted:
+            return
+
+        ingreso = PesajeModel.by_id(dialogo.id_seleccionado)
+
+        if not ingreso:
+
+            QMessageBox.warning(
+                self.view,
+                "Pesajes pendientes",
+                "El ingreso seleccionado ya no existe.",
+            )
+
+            return
+
+        self.ingreso_actual = {
+            "id_pesaje": ingreso["id_pesaje"],
+            "ticket": ingreso["ticket"],
+        }
+
+        # No debemos conservar un peso temporal de otro ingreso.
+        self.ultimo_peso = None
+
+        self.view.preparar_nuevo_registro(
+            ingreso["ticket"],
+            ConfiguracionLotesModel.proximo_lote(),
+        )
+
+        self.view.cargar_datos_generales(ingreso)
+
+        self.view.mostrar_ticket(ingreso["ticket"])
+
+        self._refrescar_lotes()
+
+        self.log(f"[CONTINUAR] Ticket " f"{ingreso['ticket']} recuperado.")
+
+    # ==================================================================
+    # REFRESCAR TABLA
+    # ==================================================================
+
+    def _refrescar_lotes(self):
+
+        if not self.ingreso_actual:
+            return
+
+        filas = PesajeService.filas_para_tabla(
+            self.ingreso_actual["id_pesaje"],
+            descendente=True,
+        )
+
+        self.view.cargar_pesajes(filas)
+
+    # ==================================================================
+    # SERIAL - DETECTAR PUERTOS
+    # ==================================================================
+
+    def detectar_puertos(self):
+        """
+        Detecta los puertos COM disponibles y los coloca
+        en los combos de balanza y display.
+        """
+
+        # Mientras esperamos comunicación no se deben modificar
+        # los puertos seleccionados.
         if self.esperando_balanza:
             return
 
-        # Si ya está comunicando, tampoco modificar.
+        # Mientras está funcionando tampoco.
         if self.balanza_comunicando:
             return
 
         self.view.configuracion.cmb_balanza.clear()
         self.view.configuracion.cmb_display.clear()
 
-        puertos = serial.tools.list_ports.comports()
+        try:
 
-        for puerto in puertos:
+            puertos = serial.tools.list_ports.comports()
 
-            descripcion = puerto.description or "Sin descripción"
-            texto = f"{puerto.device} - " f"{descripcion}"
+            for puerto in puertos:
 
-            # Balanza
-            self.view.configuracion.cmb_balanza.addItem(texto, puerto.device)
+                descripcion = puerto.description or "Sin descripción"
 
-            # Display
-            self.view.configuracion.cmb_display.addItem(texto, puerto.device)
+                texto = f"{puerto.device} - " f"{descripcion}"
 
-        # SELECCIONAR BALANZA POR DEFECTO
-        self.seleccionar_puerto(
-            self.view.configuracion.cmb_balanza, PUERTO_BALANZA_DEFAULT
-        )
+                self.view.configuracion.cmb_balanza.addItem(
+                    texto,
+                    puerto.device,
+                )
 
-        # SELECCIONAR DISPLAY POR DEFECTO
-        self.seleccionar_puerto(
-            self.view.configuracion.cmb_display, PUERTO_DISPLAY_DEFAULT
-        )
-        self.log("[INFO] Puertos actualizados.")
+                self.view.configuracion.cmb_display.addItem(
+                    texto,
+                    puerto.device,
+                )
 
-    # SELECCIONAR PUERTO
-    def seleccionar_puerto(self, combo, puerto_objetivo):
+            # Seleccionar puertos configurados por defecto.
+            self.seleccionar_puerto(
+                self.view.configuracion.cmb_balanza,
+                PUERTO_BALANZA_DEFAULT,
+            )
 
-        for i in range(combo.count()):
+            self.seleccionar_puerto(
+                self.view.configuracion.cmb_display,
+                PUERTO_DISPLAY_DEFAULT,
+            )
 
-            if combo.itemData(i) == puerto_objetivo:
+            self.log("[INFO] Puertos actualizados.")
 
-                combo.setCurrentIndex(i)
+        except Exception as e:
 
-                break
+            self.log(f"[ERROR PUERTOS] {e}")
 
-    # INICIAR
+    def seleccionar_puerto(
+        self,
+        combo,
+        puerto_objetivo,
+    ):
+        """
+        Selecciona en un QComboBox el puerto cuyo itemData
+        coincide con puerto_objetivo.
+        """
+
+        for indice in range(combo.count()):
+
+            if combo.itemData(indice) == puerto_objetivo:
+
+                combo.setCurrentIndex(indice)
+                return True
+
+        return False
+
+    # ==================================================================
+    # SERIAL - INICIAR
+    # ==================================================================
+
     def iniciar(self):
+        """
+        Abre la balanza y el display y comienza la lectura.
+        """
 
         puerto_balanza = self.view.configuracion.cmb_balanza.currentData()
+
         puerto_display = self.view.configuracion.cmb_display.currentData()
 
-        # VALIDACIONES
+        # --------------------------------------------------------------
+        # Validar puertos
+        # --------------------------------------------------------------
+
         if not puerto_balanza:
+
             QMessageBox.warning(
-                self.view, "Balanza", "Seleccione el puerto de la balanza."
+                self.view,
+                "Configuración",
+                "Seleccione el puerto de la balanza.",
             )
+
             return
 
         if not puerto_display:
+
             QMessageBox.warning(
-                self.view, "Display", "Seleccione el puerto del display."
+                self.view,
+                "Configuración",
+                "Seleccione el puerto del display.",
             )
+
             return
 
         if puerto_balanza == puerto_display:
+
             QMessageBox.warning(
                 self.view,
-                "Puertos",
-                "La balanza y el display " "deben utilizar puertos diferentes.",
+                "Configuración",
+                ("La balanza y el display deben utilizar " "puertos diferentes."),
             )
+
             return
 
         try:
 
-            # CREAR SERVICIO BALANZA
+            # ----------------------------------------------------------
+            # Crear servicio de balanza
+            # ----------------------------------------------------------
+
             self.balanza = SerialBalanza(
                 puerto=puerto_balanza,
                 baudrate=(self.view.configuracion.spin_baudrate_balanza.value()),
@@ -188,7 +823,10 @@ class BalanzaController:
 
             self.balanza.conectar()
 
-            # CREAR SERVICIO DISPLAY
+            # ----------------------------------------------------------
+            # Crear servicio de display
+            # ----------------------------------------------------------
+
             self.display = SerialDisplay(
                 puerto=puerto_display,
                 baudrate=(self.view.configuracion.spin_baudrate_display.value()),
@@ -197,67 +835,139 @@ class BalanzaController:
 
             self.display.conectar()
 
-            # ESTADOS INTERNOS
+            # ----------------------------------------------------------
+            # Estado interno
+            # ----------------------------------------------------------
+
             self.esperando_balanza = True
             self.balanza_comunicando = False
+            self.ultimo_peso = None
 
-            # ESTADO BALANZA
+            # ----------------------------------------------------------
+            # Estado visual - balanza
+            # ----------------------------------------------------------
+
             self.view.estado_balanza(
-                f"🟡 Balanza: {puerto_balanza} " f"- esperando señal...", "#b88600"
+                (f"🟡 Balanza: {puerto_balanza} " "- esperando señal..."),
+                "#b88600",
             )
 
-            # ESTADO DISPLAY
+            # ----------------------------------------------------------
+            # Estado visual - display
+            # ----------------------------------------------------------
+
             self.view.estado_display(
-                f"🟢 Puerto display abierto: " f"{puerto_display}", "green"
+                (f"🟢 Puerto display abierto: " f"{puerto_display}"),
+                "green",
             )
 
-            # ESTADO SISTEMA
+            # ----------------------------------------------------------
+            # Estado visual - sistema
+            # ----------------------------------------------------------
+
             self.view.estado_sistema(
-                "🟡 Esperando comunicación " "de la balanza...", "#b88600"
+                "🟡 Esperando comunicación de la balanza...",
+                "#b88600",
             )
 
             self.view.lbl_peso.setText("---")
 
-            # BLOQUEAR CONFIGURACIÓN
+            # ----------------------------------------------------------
+            # Bloquear configuración
+            # ----------------------------------------------------------
+
             self.view.btn_iniciar.setEnabled(False)
             self.view.btn_detener.setEnabled(True)
+
             self.view.bloquear_configuracion(True)
 
-            # LOG
+            # ----------------------------------------------------------
+            # Log
+            # ----------------------------------------------------------
+
             self.log("")
             self.log("[INICIO] Sistema iniciando...")
-            self.log(f"[INFO] Balanza: " f"{puerto_balanza}")
-            self.log(f"[INFO] Display: " f"{puerto_display}")
-            self.log("[INFO] Esperando datos " "de la balanza...")
+            self.log(f"[INFO] Balanza: {puerto_balanza}")
+            self.log(f"[INFO] Display: {puerto_display}")
+            self.log("[INFO] Esperando datos de la balanza...")
 
-            # INICIAR TIMERS
+            # ----------------------------------------------------------
+            # Iniciar timers
+            # ----------------------------------------------------------
+
             self.timer.start()
             self.timer_inicio.start()
 
         except serial.SerialException as e:
 
+            self.timer.stop()
+            self.timer_inicio.stop()
+
             self.cerrar()
             self.restaurar_controles()
 
-            self.view.estado_balanza("🔴 Error al abrir la balanza", "red")
-            self.view.estado_display("🔴 Error al abrir el display", "red")
-            self.view.estado_sistema("🔴 Error al abrir los puertos", "red")
+            self.esperando_balanza = False
+            self.balanza_comunicando = False
+
+            self.view.estado_balanza(
+                "🔴 Error al abrir la balanza",
+                "red",
+            )
+
+            self.view.estado_display(
+                "🔴 Error al abrir el display",
+                "red",
+            )
+
+            self.view.estado_sistema(
+                "🔴 Error al abrir los puertos",
+                "red",
+            )
 
             QMessageBox.critical(
                 self.view,
                 "Error de conexión",
-                "No se pudieron abrir los puertos.\n\n" f"{e}",
+                ("No se pudieron abrir los puertos.\n\n" f"{e}"),
             )
 
         except Exception as e:
 
+            self.timer.stop()
+            self.timer_inicio.stop()
+
             self.cerrar()
             self.restaurar_controles()
-            self.view.estado_sistema("🔴 Error al iniciar", "red")
-            QMessageBox.critical(self.view, "Error", str(e))
 
-    # PROCESAR BALANZA
+            self.esperando_balanza = False
+            self.balanza_comunicando = False
+
+            self.view.estado_sistema(
+                "🔴 Error al iniciar",
+                "red",
+            )
+
+            QMessageBox.critical(
+                self.view,
+                "Error",
+                str(e),
+            )
+
+    # ==================================================================
+    # SERIAL - PROCESAR BALANZA
+    # ==================================================================
+
     def procesar_balanza(self):
+        """
+        Lee las tramas recibidas por la balanza, extrae el peso
+        y lo muestra en pantalla.
+
+        IMPORTANTE:
+        El peso NO se guarda en SQLite aquí.
+        Solo se conserva como último peso válido.
+
+        El guardado real ocurre cuando el usuario presiona
+        "Capturar peso".
+        """
 
         if not self.balanza:
             return
@@ -265,12 +975,16 @@ class BalanzaController:
         try:
 
             cadena = self.balanza.leer()
+
             if not cadena:
                 return
 
             self.log(f"BALANZA → {repr(cadena)}")
 
-            # SEPARAR TRAMAS
+            # ----------------------------------------------------------
+            # Separar tramas
+            # ----------------------------------------------------------
+
             lineas = cadena.replace("\r", "\n").split("\n")
 
             for linea in lineas:
@@ -280,13 +994,19 @@ class BalanzaController:
                 if not linea:
                     continue
 
-                # PARSER
+                # ------------------------------------------------------
+                # Parser
+                # ------------------------------------------------------
+
                 peso = ParserPeso.extraer(linea)
 
                 if peso is None:
                     continue
 
-                # PRIMERA COMUNICACIÓN
+                # ------------------------------------------------------
+                # Primera comunicación válida
+                # ------------------------------------------------------
+
                 if not self.balanza_comunicando:
 
                     self.balanza_comunicando = True
@@ -294,39 +1014,67 @@ class BalanzaController:
 
                     self.timer_inicio.stop()
 
-                    # BALANZA
-                    self.view.estado_balanza("🟢 Balanza comunicando", "green")
+                    self.view.estado_balanza(
+                        "🟢 Balanza comunicando",
+                        "green",
+                    )
 
-                    # DISPLAY
-                    self.view.estado_display("🟢 Display listo", "green")
+                    self.view.estado_display(
+                        "🟢 Display listo",
+                        "green",
+                    )
 
-                    # SISTEMA
-                    self.view.estado_sistema("🟢 Sistema funcionando", "green")
+                    self.view.estado_sistema(
+                        "🟢 Sistema funcionando",
+                        "green",
+                    )
+
                     self.log("[OK] Señal de balanza detectada.")
+
                     self.log("[OK] Sistema funcionando.")
 
-                # MOSTRAR PESO
+                # ------------------------------------------------------
+                # Guardar último peso válido
+                # ------------------------------------------------------
+
+                self.ultimo_peso = peso
+
+                # ------------------------------------------------------
+                # Mostrar peso
+                # ------------------------------------------------------
+
                 self.view.mostrar_peso(peso)
 
-                # ENVIAR DISPLAY
+                # ------------------------------------------------------
+                # Enviar al display
+                # ------------------------------------------------------
+
                 self.enviar_display(peso)
 
         except serial.SerialException as e:
 
             self.log(f"[ERROR BALANZA] {e}")
+
             self.detener()
+
             QMessageBox.critical(
                 self.view,
                 "Error de balanza",
-                "Se perdió la comunicación " "con la balanza.\n\n" f"{e}",
+                ("Se perdió la comunicación con la balanza.\n\n" f"{e}"),
             )
 
         except Exception as e:
 
-            self.log(f"[ERROR] {e}")
+            self.log(f"[ERROR BALANZA] {e}")
 
-    # ENVIAR DISPLAY
+    # ==================================================================
+    # SERIAL - DISPLAY
+    # ==================================================================
+
     def enviar_display(self, peso):
+        """
+        Envía el peso actual al display.
+        """
 
         if not self.display:
             return
@@ -337,7 +1085,7 @@ class BalanzaController:
 
             if mensaje:
 
-                self.log(f"DISPLAY ← " f"{repr(mensaje)}")
+                self.log(f"DISPLAY ← {repr(mensaje)}")
 
         except serial.SerialException as e:
 
@@ -347,11 +1095,17 @@ class BalanzaController:
 
             self.log(f"[ERROR DISPLAY] {e}")
 
-    # TIMEOUT DE INICIO
-    def error_inicio(self):
+    # ==================================================================
+    # SERIAL - TIMEOUT DE INICIO
+    # ==================================================================
 
-        # Si ya llegó una señal válida,
-        # no hacer nada.
+    def error_inicio(self):
+        """
+        Se ejecuta si transcurre el tiempo configurado y la balanza
+        nunca envió una trama válida.
+        """
+
+        # Si ya empezó a comunicar, no hacer nada.
         if self.balanza_comunicando:
             return
 
@@ -359,168 +1113,150 @@ class BalanzaController:
 
         self.timer.stop()
 
-        self.log("")
-
-        self.log("[ERROR] No se recibió información " "válida de la balanza.")
-
         self.log("[ERROR] Tiempo de espera agotado.")
 
-        # Cerrar puertos
         self.cerrar()
 
-        # ======================================================
-        # ESTADOS
-        # ======================================================
-
         self.view.estado_balanza(
-            "🔴 No se detectó comunicación " "con la balanza", "red"
+            "🔴 Sin comunicación con la balanza",
+            "red",
         )
 
-        self.view.estado_display("⚪ Display detenido", "gray")
+        self.view.estado_display(
+            "⚪ Display detenido",
+            "#555",
+        )
 
-        self.view.estado_sistema("🔴 No se pudo iniciar el sistema", "red")
-
-        # ======================================================
-        # RESTAURAR CONTROLES
-        # ======================================================
+        self.view.estado_sistema(
+            "🔴 No se detectó señal de balanza",
+            "red",
+        )
 
         self.restaurar_controles()
-
-        # ======================================================
-        # MENSAJE
-        # ======================================================
 
         QMessageBox.warning(
             self.view,
-            "No se detectó la balanza",
-            "No se recibió ninguna señal válida "
-            "de la balanza durante 5 segundos.\n\n"
-            "Verifique:\n"
-            "• Que la balanza esté encendida.\n"
-            "• Que el cable serial/USB esté conectado.\n"
-            "• Que el puerto seleccionado sea correcto.\n"
-            "• Que la configuración sea 9600 / 8N1.",
+            "Sin comunicación",
+            (
+                "No se recibió una señal válida de la balanza "
+                "dentro del tiempo de espera.\n\n"
+                "Verifique:\n"
+                "• Que la balanza esté encendida.\n"
+                "• Que el cable esté conectado.\n"
+                "• Que el puerto COM sea correcto.\n"
+                "• Que la velocidad sea correcta.\n"
+                "• Que la configuración sea 9600, 8N1."
+            ),
         )
 
-    # DETENER
+    # ==================================================================
+    # SERIAL - DETENER
+    # ==================================================================
+
     def detener(self):
+        """
+        Detiene la lectura y cierra los puertos seriales.
+        """
 
         self.timer.stop()
         self.timer_inicio.stop()
+
         self.esperando_balanza = False
         self.balanza_comunicando = False
+        self.ultimo_peso = None
+
         self.cerrar()
 
         self.view.lbl_peso.setText("---")
-        self.view.estado_balanza("🔴 Balanza desconectada", "red")
-        self.view.estado_display("🔴 Display desconectado", "red")
-        self.view.estado_sistema("Detenido", "#555")
+
+        self.view.estado_balanza(
+            "🔴 Balanza desconectada",
+            "red",
+        )
+
+        self.view.estado_display(
+            "🔴 Display desconectado",
+            "red",
+        )
+
+        self.view.estado_sistema(
+            "Detenido",
+            "#555",
+        )
+
         self.restaurar_controles()
+
         self.log("[SISTEMA DETENIDO]")
 
-    # CERRAR SERVICIOS
+    # ==================================================================
+    # SERIAL - CERRAR PUERTOS
+    # ==================================================================
+
     def cerrar(self):
-
-        if self.balanza:
-
-            try:
-                self.balanza.cerrar()
-            except Exception:
-                pass
-
-        if self.display:
-
-            try:
-                self.display.cerrar()
-            except Exception:
-                pass
-
-        self.balanza = None
-        self.display = None
-
-    # RESTAURAR CONTROLES
-    def restaurar_controles(self):
-
-        self.view.btn_iniciar.setEnabled(True)
-        self.view.btn_detener.setEnabled(False)
-        self.view.bloquear_configuracion(False)
-
-    def guardar_configuracion_lotes(self):
-
-        correlativo = self.view.configuracion_lotes.spin_correlativo.value()
+        """
+        Cierra las conexiones seriales.
+        """
 
         try:
 
-            configurar_correlativo_lote(correlativo)
+            if self.balanza:
 
-            self.view.configuracion_lotes.ocultar_aviso()
-
-            QMessageBox.information(
-                self.view,
-                "Configuración de lotes",
-                f"Configuración guardada correctamente.\n\n"
-                f"Próximo lote: "
-                f"{self.view.configuracion_lotes.txt_proximo_lote.text()}",
-            )
-
-            self.view.configuracion_lotes.accept()
+                self.balanza.cerrar()
 
         except Exception as e:
 
-            QMessageBox.critical(
-                self.view,
-                "Error",
-                f"No se pudo guardar la configuración.\n\n{e}",
-            )
+            self.log(f"[ERROR CERRANDO BALANZA] {e}")
 
-    def mostrar_configuracion_lotes(self):
-        configuracion = obtener_configuracion_lote()
-        if configuracion is None:
-            self.view.configuracion_lotes.mostrar_sin_configuracion()
-        else:
-            correlativo = configuracion[1]
-            self.view.configuracion_lotes.cargar_correlativo(correlativo)
-        self.view.configuracion_lotes.exec()
+        finally:
 
+            self.balanza = None
+
+        try:
+
+            if self.display:
+
+                self.display.cerrar()
+
+        except Exception as e:
+
+            self.log(f"[ERROR CERRANDO DISPLAY] {e}")
+
+        finally:
+
+            self.display = None
+
+    # ==================================================================
+    # RESTAURAR CONTROLES
+    # ==================================================================
+
+    def restaurar_controles(self):
+        """
+        Deja nuevamente disponibles los controles seriales.
+        """
+
+        self.view.btn_iniciar.setEnabled(True)
+        self.view.btn_detener.setEnabled(False)
+
+        self.view.bloquear_configuracion(False)
+
+    # ==================================================================
     # LOG
+    # ==================================================================
+
     def log(self, texto):
-
-        self.view.log(texto)
-
-    def nuevo_registro(self):
-
-        proximo_ticket = obtener_proximo_ticket()
-        proximo_lote = obtener_proximo_lote()
-
-        self.view.preparar_nuevo_registro(
-            proximo_ticket,
-            proximo_lote,
-        )
-
-    def cargar_maestros(self):
         """
-        Carga los datos maestros desde SQLite.
+        Escribe un mensaje en el log de la interfaz.
         """
 
-        self.vehiculos = obtener_vehiculos()
-        self.carretas = obtener_carretas()
-        self.conductores = obtener_conductores()
-        self.proveedores = obtener_proveedores()
-        self.transportistas = obtener_transportistas()
-        self.concesiones = obtener_concesiones()
+        try:
 
-        self.view.cargar_maestros(
-            self.vehiculos,
-            self.carretas,
-            self.conductores,
-            self.proveedores,
-            self.transportistas,
-            self.concesiones,
-        )
+            self.view.txt_log.appendPlainText(texto)
 
-    def actualizar_maestros(self):
-        """
-        Recarga los datos maestros desde SQLite.
-        """
+            scrollbar = self.view.txt_log.verticalScrollBar()
 
-        self.cargar_maestros()
+            scrollbar.setValue(scrollbar.maximum())
+
+        except Exception:
+            # El controller no debe caerse porque la ventana
+            # todavía no esté completamente disponible.
+            pass

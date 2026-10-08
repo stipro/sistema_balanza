@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QLineEdit,
+    QComboBox,
+    QCheckBox,
     QCompleter,
     QTableWidget,
     QTableWidgetItem,
@@ -24,6 +26,8 @@ from PyQt6.QtWidgets import (
     QFrame,
     QStatusBar,
     QMessageBox,
+    QSpinBox,
+    QInputDialog,
 )
 
 from config.settings import (
@@ -359,6 +363,7 @@ class BalanzaView(QMainWindow):
         habilitado = not bloquear
 
         campos = [
+            # Datos generales
             self.txt_lote,
             self.txt_placa,
             self.txt_carreta,
@@ -375,12 +380,19 @@ class BalanzaView(QMainWindow):
             self.txt_procedencia,
             self.txt_producto,
             self.txt_observacion,
+            # Datos de carga
+            self.cmb_tipo_carga,
+            self.txt_sacos,
+            self.chk_priorizar,
         ]
 
         for campo in campos:
             campo.setEnabled(habilitado)
 
-        # El ticket se mantiene bloqueado.
+        # Botón para agregar lote
+        self.btn_agregar_lote.setEnabled(habilitado)
+
+        # Ticket siempre bloqueado
         self.txt_ticket.setEnabled(False)
 
     def mostrar_ticket(self, ticket):
@@ -426,6 +438,10 @@ class BalanzaView(QMainWindow):
         self.transportista_seleccionado = None
         self.concesion_seleccionada = None
 
+        self.txt_sacos.setValue(0)
+        self.cmb_tipo_carga.setCurrentIndex(0)
+        self.chk_priorizar.setChecked(False)
+
         self.limpiar_peso()
         self.tabla_pesajes.setRowCount(0)
         self.lbl_lote_actual.setText("Lote actual: —")
@@ -465,6 +481,17 @@ class BalanzaView(QMainWindow):
         self.txt_procedencia = self._campo()
         self.txt_producto = self._campo()
 
+        self.txt_sacos = QSpinBox()
+
+        self.txt_sacos.setMinimum(0)
+        self.txt_sacos.setMaximum(999999)
+        self.txt_sacos.setValue(0)
+
+        self.txt_sacos.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.cmb_tipo_carga = QComboBox()
+        self.cmb_tipo_carga.addItems(["SACO", "GRANEL"])
+        self.chk_priorizar = QCheckBox("Priorizar análisis")
+        self.btn_agregar_lote = self._boton("＋ AGREGAR LOTE", 40, "btn_agregar_lote")
         self.txt_observacion = self._campo()
 
         filas = [
@@ -510,6 +537,16 @@ class BalanzaView(QMainWindow):
                     (self.txt_procedencia, 3),
                     self._etiqueta("Producto:"),
                     (self.txt_producto, 3),
+                ),
+            ),
+            (
+                "Carga:",
+                self._fila(
+                    self.cmb_tipo_carga,
+                    self._etiqueta("Sacos:"),
+                    (self.txt_sacos, 1),
+                    self.chk_priorizar,
+                    (self.btn_agregar_lote, 1),
                 ),
             ),
             (
@@ -1259,3 +1296,94 @@ class BalanzaView(QMainWindow):
         self.cerrando.emit()
 
         event.accept()
+
+    def obtener_datos_lote(self):
+        """Datos propios del lote (los del camión NO van aquí)."""
+        tipo = self.cmb_tipo_carga.currentText()
+        prov = self.proveedor_seleccionado
+        conc = self.concesion_seleccionada
+        return {
+            "lote": self.txt_lote.text().strip() or None,
+            "id_proveedor": prov["id_proveedor"] if prov else None,
+            "guia_proveedor": self.txt_guia_proveedor.text().strip() or None,
+            "guia_transportista": self.txt_guia_transportista.text().strip() or None,
+            "id_concesion": conc["id_concesion"] if conc else None,
+            "procedencia": self.txt_procedencia.text().strip() or None,
+            "producto": self.txt_producto.text().strip() or None,
+            "observacion": self.txt_observacion.text().strip() or None,
+            "tipo_carga": tipo,
+            "cantidad_sacos": self.txt_sacos.value() if tipo == "SACO" else None,
+            "priorizar_analisis": self.chk_priorizar.isChecked(),
+        }
+
+    def limpiar_campos_lote(self):
+        """Después de agregar un lote: limpia lo propio del lote,
+        conserva proveedor/concesión/procedencia/producto (se repiten
+        seguido). Si en tu operación NO se repiten, limpia esos también."""
+        self.txt_lote.clear()
+        self.txt_guia_proveedor.clear()
+        self.txt_sacos.setValue(0)
+        self.txt_observacion.clear()
+        self.chk_priorizar.setChecked(False)
+        self.txt_lote.setFocus()
+
+    def mostrar_proximo_lote(self, lote):
+        if lote:
+            self.txt_lote.setText(lote)
+
+    def pedir_motivo(self, titulo):
+        texto, ok = QInputDialog.getText(self, titulo, "Motivo (obligatorio):")
+        return texto.strip(), ok
+
+    def seleccionar_por_id(self, combo, id_):
+        if id_ is None:
+            return
+        i = combo.findData(id_)
+        if i >= 0:
+            combo.setCurrentIndex(i)
+
+    def cargar_datos_generales(self, ingreso):
+        """
+        Re-puebla los datos generales al continuar un pendiente.
+
+        ingreso: fila de PesajeModel.by_id() (ids o None).
+        """
+
+        self.seleccionar_por_id(self.txt_placa, ingreso["id_vehiculo"])
+
+        self.seleccionar_por_id(self.txt_carreta, ingreso["id_carreta"])
+
+        # Chofer / transportista:
+        # buscar los datos completos en los maestros usando el ID guardado.
+        for lista, campo, id_key, nombre_idx in (
+            ("conductores", self.txt_chofer, ingreso["id_conductor"], 1),
+            ("transportistas", self.txt_transportista, ingreso["id_transportista"], 1),
+        ):
+
+            for fila in self.maestros.get(lista, []):
+
+                if fila[0] == id_key:
+
+                    campo.setText(fila[nombre_idx])
+
+                    if lista == "conductores":
+
+                        self.conductor_seleccionado = {
+                            "id_conductor": fila[0],
+                            "nombre": fila[1],
+                            "brevete": fila[2],
+                        }
+
+                        self.txt_brevete.setText(fila[2])
+
+                    else:
+
+                        self.transportista_seleccionado = {
+                            "id_transportista": fila[0],
+                            "nombre": fila[1],
+                            "ruc": fila[2],
+                        }
+
+                        self.txt_ruc_transportista.setText(fila[2])
+
+                    break
