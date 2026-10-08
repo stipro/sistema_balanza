@@ -66,6 +66,7 @@ def cargar_estilo():
 
 # (texto, fondo, color texto, borde)
 ESTADOS_OPERACION = {
+    "sin_operacion": ("● SIN OPERACIÓN", "#f3f4f6", "#6b7280", "#d1d5db"),
     "proceso": ("● EN PROCESO", "#eff6ff", "#1d4ed8", "#bfdbfe"),
     "pendiente": ("● PENDIENTE", "#fffbeb", "#b45309", "#fde68a"),
     "completo": ("● COMPLETO", "#f0fdf4", "#15803d", "#bbf7d0"),
@@ -316,7 +317,7 @@ class BalanzaView(QMainWindow):
 
         principal.addWidget(grupo_ident)
 
-        self.estado_operacion("proceso")
+        self.estado_operacion("sin_operacion")
 
         # ÁREA CENTRAL: DATOS (izq.) + PESO (der.)
         operacion = QHBoxLayout()
@@ -383,7 +384,7 @@ class BalanzaView(QMainWindow):
             # Datos de carga
             self.cmb_tipo_carga,
             self.txt_sacos,
-            self.chk_priorizar,
+            # self.chk_priorizar,
         ]
 
         for campo in campos:
@@ -440,7 +441,7 @@ class BalanzaView(QMainWindow):
 
         self.txt_sacos.setValue(0)
         self.cmb_tipo_carga.setCurrentIndex(0)
-        self.chk_priorizar.setChecked(False)
+        # self.chk_priorizar.setChecked(False)
 
         self.limpiar_peso()
         self.tabla_pesajes.setRowCount(0)
@@ -490,7 +491,7 @@ class BalanzaView(QMainWindow):
         self.txt_sacos.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cmb_tipo_carga = QComboBox()
         self.cmb_tipo_carga.addItems(["SACO", "GRANEL"])
-        self.chk_priorizar = QCheckBox("Priorizar análisis")
+        # self.chk_priorizar = QCheckBox("Priorizar análisis")
         self.btn_agregar_lote = self._boton("＋ AGREGAR LOTE", 40, "btn_agregar_lote")
         self.txt_observacion = self._campo()
 
@@ -545,7 +546,7 @@ class BalanzaView(QMainWindow):
                     self.cmb_tipo_carga,
                     self._etiqueta("Sacos:"),
                     (self.txt_sacos, 1),
-                    self.chk_priorizar,
+                    # self.chk_priorizar,
                     (self.btn_agregar_lote, 1),
                 ),
             ),
@@ -610,10 +611,10 @@ class BalanzaView(QMainWindow):
 
         return grupo
 
-    # GRUPO: PESAJES DE LOS LOTES
+    # GRUPO: Lotes del carro / operación
     def _crear_grupo_pesajes(self):
 
-        grupo = QGroupBox("Pesajes de los lotes")
+        grupo = QGroupBox("Lotes del carro / operación")
 
         layout = QVBoxLayout(grupo)
 
@@ -1314,7 +1315,7 @@ class BalanzaView(QMainWindow):
             "observacion": self.txt_observacion.text().strip() or None,
             "tipo_carga": tipo,
             "cantidad_sacos": self.txt_sacos.value() if tipo == "SACO" else None,
-            "priorizar_analisis": self.chk_priorizar.isChecked(),
+            # "priorizar_analisis": self.chk_priorizar.isChecked(),
         }
 
     def limpiar_campos_lote(self):
@@ -1325,7 +1326,7 @@ class BalanzaView(QMainWindow):
         self.txt_guia_proveedor.clear()
         self.txt_sacos.setValue(0)
         self.txt_observacion.clear()
-        self.chk_priorizar.setChecked(False)
+        # self.chk_priorizar.setChecked(False)
         self.txt_lote.setFocus()
 
     def mostrar_proximo_lote(self, lote):
@@ -1388,3 +1389,15 @@ class BalanzaView(QMainWindow):
                         self.txt_ruc_transportista.setText(fila[2])
 
                     break
+
+    def obtener_fila_lote_seleccionada(self):
+        """
+        Devuelve el texto del lote (columna 0) de la fila seleccionada
+        en la tabla, o None si no hay selección.
+        """
+        items = self.tabla_pesajes.selectedItems()
+
+        if not items:
+            return None
+
+        return items[0].text().strip() or None

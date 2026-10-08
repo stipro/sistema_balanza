@@ -65,8 +65,7 @@ class PesajeModel(ModeloBase):
         """Ingresos EN_PROCESO con sus contadores (para 'Pesajes pendientes')."""
 
         with lectura(conexion) as cx:
-            filas = cx.execute(
-                """
+            filas = cx.execute("""
                 SELECT
                     p.id_pesaje,
                     p.ticket,
@@ -88,8 +87,7 @@ class PesajeModel(ModeloBase):
                 LEFT JOIN conductores c ON c.id_conductor = p.id_conductor
                 WHERE p.estado = 'EN_PROCESO'
                 ORDER BY p.ticket
-                """
-            ).fetchall()
+                """).fetchall()
 
         return [dict(f) for f in filas]
 

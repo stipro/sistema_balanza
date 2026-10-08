@@ -232,6 +232,87 @@ class PesajeService:
         return resultado
 
     @classmethod
+    def registrar_captura_para_lote(cls, id_lote, peso):
+        """
+        Captura dirigida: asigna el peso al lote indicado.
+
+        - lote sin bruto          -> la captura es su BRUTO.
+        - lote con bruto sin tara -> la captura es su TARA (lo completa).
+        - lote COMPLETADO/ANULADO -> error.
+
+        Se conserva la regla de la cadena: el peso debe ser menor que
+        la captura anterior del ingreso y menor que el bruto del lote.
+        """
+
+        peso = cls._normalizar_peso(peso)
+
+        with transaccion() as cx:
+            lote = PesajeLoteModel.by_id(id_lote, cx)
+
+            if lote is None:
+                raise ReglaNegocioError("El lote no existe.")
+
+            ingreso = cls._ingreso_abierto(lote["id_pesaje"], cx)
+
+            if ingreso["id_vehiculo"] is None:
+                raise ReglaNegocioError(
+                    "Seleccione la placa del vehículo antes de capturar."
+                )
+
+            if lote["estado"] == "ANULADO":
+                raise ReglaNegocioError(f"El lote {lote['lote']} está anulado.")
+
+            if lote["estado"] == "COMPLETADO":
+                raise ReglaNegocioError(
+                    f"El lote {lote['lote']} ya tiene sus dos pesadas."
+                )
+
+            # Validar contra la cadena del ingreso.
+            anterior = PesajeRegistroModel.ultimo_valido(lote["id_pesaje"], cx)
+
+            if anterior and peso >= anterior["peso"]:
+                raise ReglaNegocioError(
+                    f"El peso ({peso} kg) debe ser menor que la captura "
+                    f"anterior ({anterior['peso']} kg)."
+                )
+
+            # Si será TARA, validar contra el BRUTO del lote (antes de insertar).
+            bruto_reg = None
+
+            if lote["id_registro_bruto"] is not None:
+                bruto_reg = PesajeRegistroModel.by_id(
+                    lote["id_registro_bruto"], cx
+                )
+
+                if peso >= bruto_reg["peso"]:
+                    raise ReglaNegocioError(
+                        f"La tara ({peso} kg) debe ser menor que el bruto "
+                        f"del lote {lote['lote']} ({bruto_reg['peso']} kg)."
+                    )
+
+            id_registro = PesajeRegistroModel.registrar(lote["id_pesaje"], peso, cx)
+            registro = PesajeRegistroModel.by_id(id_registro, cx)
+
+            resultado = {
+                "id_registro": id_registro,
+                "secuencia": registro["secuencia"],
+                "peso": peso,
+                "tara_de": None,
+                "bruto_de": None,
+                "neto": None,
+            }
+
+            if bruto_reg is None:
+                PesajeLoteModel.asignar_bruto(id_lote, id_registro, cx)
+                resultado["bruto_de"] = lote["lote"]
+            else:
+                PesajeLoteModel.asignar_tara(id_lote, id_registro, cx)
+                resultado["tara_de"] = lote["lote"]
+                resultado["neto"] = bruto_reg["peso"] - peso
+
+        return resultado
+
+    @classmethod
     def anular_ultima_captura(cls, id_pesaje, motivo):
         """
         Corrige un error de captura: anula SOLO la última captura válida

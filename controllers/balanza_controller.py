@@ -19,6 +19,7 @@ from models.maestros import (
 )
 from models.pesajes import (
     ConfiguracionLotesModel,
+    PesajeLoteModel,
     PesajeModel,
 )
 from services.pesaje_service import PesajeService
@@ -60,6 +61,7 @@ class BalanzaController:
         # ==========================================================
 
         self.ingreso_actual = None
+        self._mapa_lotes = {}
         # {
         #     "id_pesaje": int,
         #     "ticket": int
@@ -280,6 +282,8 @@ class BalanzaController:
                 "ticket": ingreso["ticket"],
             }
 
+            print("[DEBUG] ingreso_actual:", self.ingreso_actual)
+
             # Limpiar peso temporal anterior.
             self.ultimo_peso = None
 
@@ -365,18 +369,10 @@ class BalanzaController:
     # ==================================================================
 
     def agregar_lote(self):
-        """
-        Agrega un lote al ingreso actual.
-        """
+        """Botón AGREGAR LOTE: crea el lote SIN peso (flujo del diagrama)."""
 
         if not self.ingreso_actual:
-
-            QMessageBox.warning(
-                self.view,
-                "Lote",
-                "Presione NUEVO primero.",
-            )
-
+            QMessageBox.warning(self.view, "Lote", "Presione NUEVO primero.")
             return
 
         datos = self.view.obtener_datos_lote()
@@ -386,43 +382,27 @@ class BalanzaController:
             QMessageBox.warning(
                 self.view,
                 "Proveedor",
-                (
-                    "Seleccione el proveedor desde la lista "
-                    "desplegable (no escriba uno nuevo a mano)."
-                ),
+                "Seleccione el proveedor desde la lista desplegable "
+                "(no escriba uno nuevo a mano).",
             )
-
             return
 
         try:
-
-            # Antes de crear el lote aseguramos que los datos
-            # generales del camión estén guardados.
             self._sincronizar_datos_generales()
 
-            lote = PesajeService.agregar_lote(
-                self.ingreso_actual["id_pesaje"],
-                datos,
-            )
+            lote = PesajeService.agregar_lote(self.ingreso_actual["id_pesaje"], datos)
 
             self.log(
                 f"[LOTE] {lote['lote']} agregado al ticket "
-                f"{self.ingreso_actual['ticket']}."
+                f"{self.ingreso_actual['ticket']} (sin peso)."
             )
 
             self.view.limpiar_campos_lote()
-
             self.view.mostrar_proximo_lote(ConfiguracionLotesModel.proximo_lote())
-
             self._refrescar_lotes()
 
         except ReglaNegocioError as e:
-
-            QMessageBox.warning(
-                self.view,
-                "Agregar lote",
-                str(e),
-            )
+            QMessageBox.warning(self.view, "Agregar lote", str(e))
 
     # ==================================================================
     # CAPTURA DE PESO
@@ -430,66 +410,110 @@ class BalanzaController:
 
     def capturar_peso(self):
         """
-        Registra el último peso válido recibido de la balanza.
-
-        La asignación del peso a bruto/tara la realiza PesajeService.
+        Botón CAPTURAR PESO (flujo del diagrama, con la corrección
+        de la cadena: sin selección, primero se sirve al lote abierto).
         """
 
         if not self.ingreso_actual:
-
             QMessageBox.warning(
                 self.view,
-                "Captura",
-                "Presione NUEVO primero.",
+                "Sin operación",
+                "Primero debe iniciar una operación (NUEVO).",
             )
-
             return
 
         if not self.balanza_comunicando or self.ultimo_peso is None:
-
             QMessageBox.warning(
-                self.view,
-                "Captura",
-                "No hay peso estable de la balanza.",
+                self.view, "Balanza", "No hay peso válido de la balanza."
             )
-
             return
+
+        lote_sel = self.view.obtener_fila_lote_seleccionada()
 
         try:
 
-            # Guardar datos generales antes de capturar.
-            self._sincronizar_datos_generales()
+            if lote_sel is not None:
+                # Rama derecha del diagrama: usar lote existente.
+                self._capturar_peso_lote_existente(lote_sel)
+                return
 
-            resultado = PesajeService.registrar_captura(
-                self.ingreso_actual["id_pesaje"],
-                self.ultimo_peso,
-            )
+            # Rama izquierda: sin selección, ¿hay un lote esperando su tara?
+            abierto = PesajeLoteModel.abierto(self.ingreso_actual["id_pesaje"])
 
-            detalle = f"[CAPTURA #{resultado['secuencia']}] " f"{resultado['peso']} kg"
-
-            if resultado["bruto_de"]:
-
-                detalle += f" -> BRUTO de " f"{resultado['bruto_de']}"
-
-            if resultado["tara_de"]:
-
-                detalle += f" -> TARA de " f"{resultado['tara_de']}"
-
-            if resultado["neto"] is not None:
-
-                detalle += f" | NETO: " f"{resultado['neto']} kg"
-
-            self.log(detalle)
-
-            self._refrescar_lotes()
+            if abierto is not None:
+                # Existe lote abierto → esta pesada es su TARA.
+                self._capturar_peso_lote_existente(abierto["lote"])
+                return
+            
+            self._capturar_nuevo_lote_con_peso()
 
         except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "Capturar peso", str(e))
 
-            QMessageBox.warning(
-                self.view,
-                "Capturar peso",
-                str(e),
+    def _capturar_nuevo_lote_con_peso(self):
+        """
+        Crea el lote con los datos del formulario y le asigna
+        esta captura como BRUTO.
+        """
+
+        datos = self.view.obtener_datos_lote()
+
+        if datos["id_proveedor"] is None:
+            raise ReglaNegocioError(
+                "Seleccione el proveedor desde la lista antes de capturar."
             )
+
+        self._sincronizar_datos_generales()
+
+        lote = PesajeService.agregar_lote(self.ingreso_actual["id_pesaje"], datos)
+
+        r = PesajeService.registrar_captura_para_lote(
+            lote["id_pesaje_lote"], self.ultimo_peso
+        )
+
+        self._log_captura(r)
+
+        self.view.limpiar_campos_lote()
+        self.view.mostrar_proximo_lote(ConfiguracionLotesModel.proximo_lote())
+        self._refrescar_lotes()
+
+    def _capturar_peso_lote_existente(self, lote_texto):
+        """
+        Captura dirigida al lote de la fila seleccionada (o al lote
+        abierto de la cadena). El service decide si es bruto o tara.
+        """
+
+        id_lote = self._mapa_lotes.get(lote_texto)
+
+        if id_lote is None:
+            raise ReglaNegocioError(
+                "La fila seleccionada ya no existe. Actualice la tabla."
+            )
+
+        self._sincronizar_datos_generales()
+
+        r = PesajeService.registrar_captura_para_lote(id_lote, self.ultimo_peso)
+
+        self._log_captura(r)
+
+        self.view.tabla_pesajes.clearSelection()
+        self._refrescar_lotes()
+
+    def _log_captura(self, r):
+        """Log común de ambas ramas."""
+
+        detalle = f"[CAPTURA #{r['secuencia']}] {r['peso']} kg"
+
+        if r["bruto_de"]:
+            detalle += f" -> BRUTO de {r['bruto_de']}"
+
+        if r["tara_de"]:
+            detalle += f" -> TARA de {r['tara_de']}"
+
+        if r["neto"] is not None:
+            detalle += f" | NETO: {r['neto']} kg"
+
+        self.log(detalle)
 
     # ==================================================================
     # GUARDAR / CONFIRMAR
@@ -677,9 +701,14 @@ class BalanzaController:
         if not self.ingreso_actual:
             return
 
+        detalle = PesajeService.lotes_detalle(
+            self.ingreso_actual["id_pesaje"], descendente=True
+        )
+
+        self._mapa_lotes = {d["lote"]: d["id_pesaje_lote"] for d in detalle}
+
         filas = PesajeService.filas_para_tabla(
-            self.ingreso_actual["id_pesaje"],
-            descendente=True,
+            self.ingreso_actual["id_pesaje"], descendente=True
         )
 
         self.view.cargar_pesajes(filas)
