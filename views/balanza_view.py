@@ -789,6 +789,7 @@ class BalanzaView(QMainWindow):
         self.configuracion.bloquear_configuracion(bloquear)
         self.act_actualizar_puertos.setEnabled(not bloquear)
 
+    # LOG
     def log(self, texto):
 
         self.configuracion.log(texto)

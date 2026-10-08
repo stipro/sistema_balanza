@@ -1239,24 +1239,6 @@ class BalanzaController:
 
         self.view.bloquear_configuracion(False)
 
-    # ==================================================================
     # LOG
-    # ==================================================================
-
     def log(self, texto):
-        """
-        Escribe un mensaje en el log de la interfaz.
-        """
-
-        try:
-
-            self.view.txt_log.appendPlainText(texto)
-
-            scrollbar = self.view.txt_log.verticalScrollBar()
-
-            scrollbar.setValue(scrollbar.maximum())
-
-        except Exception:
-            # El controller no debe caerse porque la ventana
-            # todavía no esté completamente disponible.
-            pass
+        self.view.log(texto)

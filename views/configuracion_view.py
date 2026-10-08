@@ -106,9 +106,7 @@ class ConfiguracionView(QDialog):
 
     # LOG
     def log(self, texto):
-
         self.txt_log.appendPlainText(texto)
 
         scrollbar = self.txt_log.verticalScrollBar()
-
         scrollbar.setValue(scrollbar.maximum())
