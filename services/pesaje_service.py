@@ -89,9 +89,47 @@ class PesajeService:
 
     # LOTES
     @classmethod
+    def _agregar_lote_tx(cls, cx, id_pesaje, datos):
+        """
+        Agrega un lote DENTRO de una transacción ya abierta (cx).
+        Devuelve el id del lote. No hace commit.
+        """
+
+        cls._ingreso_abierto(id_pesaje, cx)
+
+        campos = PesajeLoteModel.solo_columnas(datos, excluir=("id_pesaje", "orden"))
+
+        lote = (campos.get("lote") or "").strip()
+        propuesto = ConfiguracionLotesModel.proximo_lote(cx)
+
+        if not lote:
+            if propuesto is None:
+                raise ReglaNegocioError(
+                    "Configure el correlativo de lotes o escriba el lote."
+                )
+            lote = propuesto
+
+        if lote == propuesto:
+            ConfiguracionLotesModel.consumir_correlativo(cx)
+
+        campos["lote"] = lote
+        campos["id_pesaje"] = id_pesaje
+        campos["orden"] = PesajeLoteModel.siguiente_orden(id_pesaje, cx)
+
+        id_lote = PesajeLoteModel.add(campos, cx)
+
+        # Si ya hay una captura que ningún lote usa como bruto, la toma.
+        pendiente = PesajeRegistroModel.ultimo_sin_bruto(id_pesaje, cx)
+
+        if pendiente:
+            PesajeLoteModel.asignar_bruto(id_lote, pendiente["id_registro"], cx)
+
+        return id_lote
+
+    @classmethod
     def agregar_lote(cls, id_pesaje, datos):
         """
-        Agrega un lote al ingreso.
+        Botón AGREGAR LOTE: crea el lote SIN pesar.
 
         - Si no se indica `lote`, se usa el próximo del correlativo.
         - El correlativo se consume solo si el lote es el propuesto.
@@ -99,33 +137,7 @@ class PesajeService:
         """
 
         with transaccion() as cx:
-            cls._ingreso_abierto(id_pesaje, cx)
-
-            campos = PesajeLoteModel.solo_columnas(datos, excluir=("id_pesaje", "orden"))
-
-            lote = (campos.get("lote") or "").strip()
-            propuesto = ConfiguracionLotesModel.proximo_lote(cx)
-
-            if not lote:
-                if propuesto is None:
-                    raise ReglaNegocioError(
-                        "Configure el correlativo de lotes o escriba el lote."
-                    )
-                lote = propuesto
-
-            if lote == propuesto:
-                ConfiguracionLotesModel.consumir_correlativo(cx)
-
-            campos["lote"] = lote
-            campos["id_pesaje"] = id_pesaje
-            campos["orden"] = PesajeLoteModel.siguiente_orden(id_pesaje, cx)
-
-            id_lote = PesajeLoteModel.add(campos, cx)
-
-            pendiente = PesajeRegistroModel.ultimo_sin_bruto(id_pesaje, cx)
-
-            if pendiente:
-                PesajeLoteModel.asignar_bruto(id_lote, pendiente["id_registro"], cx)
+            id_lote = cls._agregar_lote_tx(cx, id_pesaje, datos)
 
         return PesajeLoteModel.by_id(id_lote)
 
@@ -158,157 +170,129 @@ class PesajeService:
 
     # CAPTURAS
     @classmethod
-    def registrar_captura(cls, id_pesaje, peso):
+    def _capturar_tx(cls, cx, id_pesaje, peso):
         """
-        Botón CAPTURAR PESO. Guarda la captura al instante y la asigna:
+        Registra una captura DENTRO de una transacción ya abierta (cx).
+        `peso` ya viene normalizado (entero). No hace commit.
 
+        La cadena decide el destino, nunca el operador:
         1. si hay un lote abierto (bruto sin tara) -> es su TARA y lo completa.
         2. si hay un siguiente lote sin bruto      -> es su BRUTO.
-        3. si el ingreso aún no tiene lotes (primera captura) -> queda
-           guardada y la tomará el primer lote que se agregue.
-        Si todos los lotes ya están completos, se rechaza la captura.
-
-        Devuelve un dict con lo que pasó (para mostrar en la interfaz).
+        Una misma captura puede cumplir los dos papeles a la vez.
         """
 
-        peso = cls._normalizar_peso(peso)
+        ingreso = cls._ingreso_abierto(id_pesaje, cx)
 
-        with transaccion() as cx:
-            ingreso = cls._ingreso_abierto(id_pesaje, cx)
+        if ingreso["id_vehiculo"] is None:
+            raise ReglaNegocioError(
+                "Seleccione la placa del vehículo antes de capturar."
+            )
 
-            if ingreso["id_vehiculo"] is None:
+        anterior = PesajeRegistroModel.ultimo_valido(id_pesaje, cx)
+
+        if anterior and peso >= anterior["peso"]:
+            raise ReglaNegocioError(
+                f"El peso ({peso} kg) debe ser menor que la captura "
+                f"anterior ({anterior['peso']} kg)."
+            )
+
+        abierto = PesajeLoteModel.abierto(id_pesaje, cx)
+        siguiente = PesajeLoteModel.siguiente_sin_bruto(id_pesaje, cx)
+
+        # Evita capturas sin destino (p. ej. un doble clic al terminar).
+        if abierto is None and siguiente is None:
+            if PesajeLoteModel.by_pesaje(id_pesaje, conexion=cx):
                 raise ReglaNegocioError(
-                    "Seleccione la placa del vehículo antes de capturar."
+                    "Todos los lotes ya tienen sus pesadas. Use AGREGAR LOTE "
+                    "si hay otro lote, o presione GUARDAR."
+                )
+            if anterior:
+                raise ReglaNegocioError(
+                    "Agregue el lote antes de la siguiente captura."
                 )
 
-            anterior = PesajeRegistroModel.ultimo_valido(id_pesaje, cx)
+        id_registro = PesajeRegistroModel.registrar(id_pesaje, peso, cx)
+        registro = PesajeRegistroModel.by_id(id_registro, cx)
 
-            if anterior and peso >= anterior["peso"]:
-                raise ReglaNegocioError(
-                    f"El peso ({peso} kg) debe ser menor que la captura "
-                    f"anterior ({anterior['peso']} kg)."
-                )
+        resultado = {
+            "id_registro": id_registro,
+            "secuencia": registro["secuencia"],
+            "peso": peso,
+            "tara_de": None,
+            "bruto_de": None,
+            "neto": None,
+            "lote_creado": None,
+        }
 
-            abierto = PesajeLoteModel.abierto(id_pesaje, cx)
-            siguiente = PesajeLoteModel.siguiente_sin_bruto(id_pesaje, cx)
+        if abierto:
+            bruto = PesajeRegistroModel.by_id(abierto["id_registro_bruto"], cx)
 
-            # Evita capturas sin destino (p. ej. un doble clic al terminar).
-            if abierto is None and siguiente is None:
-                if PesajeLoteModel.by_pesaje(id_pesaje, conexion=cx):
-                    raise ReglaNegocioError(
-                        "Todos los lotes ya tienen sus pesadas. Agregue otro "
-                        "lote o presione GUARDAR."
-                    )
-                if anterior:
-                    raise ReglaNegocioError(
-                        "Agregue el lote antes de la siguiente captura."
-                    )
+            PesajeLoteModel.asignar_tara(abierto["id_pesaje_lote"], id_registro, cx)
 
-            id_registro = PesajeRegistroModel.registrar(id_pesaje, peso, cx)
-            registro = PesajeRegistroModel.by_id(id_registro, cx)
+            resultado["tara_de"] = abierto["lote"]
+            resultado["neto"] = bruto["peso"] - peso
 
-            resultado = {
-                "id_registro": id_registro,
-                "secuencia": registro["secuencia"],
-                "peso": peso,
-                "tara_de": None,
-                "bruto_de": None,
-                "neto": None,
-            }
+        if siguiente:
+            PesajeLoteModel.asignar_bruto(siguiente["id_pesaje_lote"], id_registro, cx)
 
-            if abierto:
-                bruto = PesajeRegistroModel.by_id(abierto["id_registro_bruto"], cx)
-
-                PesajeLoteModel.asignar_tara(abierto["id_pesaje_lote"], id_registro, cx)
-
-                resultado["tara_de"] = abierto["lote"]
-                resultado["neto"] = bruto["peso"] - peso
-
-            if siguiente:
-                PesajeLoteModel.asignar_bruto(siguiente["id_pesaje_lote"], id_registro, cx)
-
-                resultado["bruto_de"] = siguiente["lote"]
+            resultado["bruto_de"] = siguiente["lote"]
 
         return resultado
 
     @classmethod
-    def registrar_captura_para_lote(cls, id_lote, peso):
+    def registrar_captura(cls, id_pesaje, peso):
         """
-        Captura dirigida: asigna el peso al lote indicado.
-
-        - lote sin bruto          -> la captura es su BRUTO.
-        - lote con bruto sin tara -> la captura es su TARA (lo completa).
-        - lote COMPLETADO/ANULADO -> error.
-
-        Se conserva la regla de la cadena: el peso debe ser menor que
-        la captura anterior del ingreso y menor que el bruto del lote.
+        Captura de bajo nivel: solo asigna la captura según la cadena.
+        Para el botón CAPTURAR PESO use capturar().
         """
 
         peso = cls._normalizar_peso(peso)
 
         with transaccion() as cx:
-            lote = PesajeLoteModel.by_id(id_lote, cx)
+            return cls._capturar_tx(cx, id_pesaje, peso)
 
-            if lote is None:
-                raise ReglaNegocioError("El lote no existe.")
+    @classmethod
+    def capturar(cls, id_pesaje, peso, datos_lote=None):
+        """
+        Botón CAPTURAR PESO. Una sola transacción:
 
-            ingreso = cls._ingreso_abierto(lote["id_pesaje"], cx)
+        - Hay lote abierto o lotes esperando bruto -> la cadena decide
+          (TARA del abierto y/o BRUTO del siguiente). `datos_lote` se ignora.
+        - No hay lotes ni capturas (primera pesada del camión) -> crea el
+          lote con `datos_lote` y la captura es su BRUTO.
+        - Todos los lotes ya están completos -> error (use AGREGAR LOTE o
+          GUARDAR). Nunca se pide otra pesada con el camión quieto.
 
-            if ingreso["id_vehiculo"] is None:
-                raise ReglaNegocioError(
-                    "Seleccione la placa del vehículo antes de capturar."
-                )
+        Si algo falla, no queda nada guardado (ni lote ni correlativo).
+        Devuelve el dict de la captura, con 'lote_creado' si se creó un lote.
+        """
 
-            if lote["estado"] == "ANULADO":
-                raise ReglaNegocioError(f"El lote {lote['lote']} está anulado.")
+        peso = cls._normalizar_peso(peso)
 
-            if lote["estado"] == "COMPLETADO":
-                raise ReglaNegocioError(
-                    f"El lote {lote['lote']} ya tiene sus dos pesadas."
-                )
+        with transaccion() as cx:
+            cls._ingreso_abierto(id_pesaje, cx)
 
-            # Validar contra la cadena del ingreso.
-            anterior = PesajeRegistroModel.ultimo_valido(lote["id_pesaje"], cx)
+            espera = PesajeLoteModel.abierto(
+                id_pesaje, cx
+            ) or PesajeLoteModel.siguiente_sin_bruto(id_pesaje, cx)
 
-            if anterior and peso >= anterior["peso"]:
-                raise ReglaNegocioError(
-                    f"El peso ({peso} kg) debe ser menor que la captura "
-                    f"anterior ({anterior['peso']} kg)."
-                )
+            sin_capturas = PesajeRegistroModel.ultimo_valido(id_pesaje, cx) is None
 
-            # Si será TARA, validar contra el BRUTO del lote (antes de insertar).
-            bruto_reg = None
+            lote_creado = None
 
-            if lote["id_registro_bruto"] is not None:
-                bruto_reg = PesajeRegistroModel.by_id(
-                    lote["id_registro_bruto"], cx
-                )
+            if espera is None and sin_capturas:
 
-                if peso >= bruto_reg["peso"]:
+                if datos_lote is None:
                     raise ReglaNegocioError(
-                        f"La tara ({peso} kg) debe ser menor que el bruto "
-                        f"del lote {lote['lote']} ({bruto_reg['peso']} kg)."
+                        "Seleccione el proveedor y complete los datos del lote "
+                        "antes de la primera captura."
                     )
 
-            id_registro = PesajeRegistroModel.registrar(lote["id_pesaje"], peso, cx)
-            registro = PesajeRegistroModel.by_id(id_registro, cx)
+                id_lote = cls._agregar_lote_tx(cx, id_pesaje, datos_lote)
+                lote_creado = PesajeLoteModel.by_id(id_lote, cx)["lote"]
 
-            resultado = {
-                "id_registro": id_registro,
-                "secuencia": registro["secuencia"],
-                "peso": peso,
-                "tara_de": None,
-                "bruto_de": None,
-                "neto": None,
-            }
-
-            if bruto_reg is None:
-                PesajeLoteModel.asignar_bruto(id_lote, id_registro, cx)
-                resultado["bruto_de"] = lote["lote"]
-            else:
-                PesajeLoteModel.asignar_tara(id_lote, id_registro, cx)
-                resultado["tara_de"] = lote["lote"]
-                resultado["neto"] = bruto_reg["peso"] - peso
+            resultado = cls._capturar_tx(cx, id_pesaje, peso)
+            resultado["lote_creado"] = lote_creado
 
         return resultado
 

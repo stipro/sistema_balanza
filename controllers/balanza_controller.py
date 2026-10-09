@@ -410,8 +410,22 @@ class BalanzaController:
 
     def capturar_peso(self):
         """
-        Botón CAPTURAR PESO (flujo del diagrama, con la corrección
-        de la cadena: sin selección, primero se sirve al lote abierto).
+        Botón CAPTURAR PESO.
+
+        La cadena de pesadas decide automáticamente el destino:
+
+        - Primera captura:
+            BRUTO del primer lote.
+
+        - Capturas siguientes:
+            TARA del lote anterior
+            +
+            BRUTO del siguiente lote.
+
+        - Última captura:
+            TARA del último lote.
+
+        El usuario no decide manualmente si una captura es BRUTO o TARA.
         """
 
         if not self.ingreso_actual:
@@ -424,31 +438,52 @@ class BalanzaController:
 
         if not self.balanza_comunicando or self.ultimo_peso is None:
             QMessageBox.warning(
-                self.view, "Balanza", "No hay peso válido de la balanza."
+                self.view,
+                "Balanza",
+                "No hay peso válido de la balanza.",
             )
             return
 
-        lote_sel = self.view.obtener_fila_lote_seleccionada()
-
         try:
+            # Sincronizar datos generales del ingreso
+            self._sincronizar_datos_generales()
 
-            if lote_sel is not None:
-                # Rama derecha del diagrama: usar lote existente.
-                self._capturar_peso_lote_existente(lote_sel)
-                return
+            # Obtener datos del lote para la primera captura
+            datos_lote = self.view.obtener_datos_lote()
 
-            # Rama izquierda: sin selección, ¿hay un lote esperando su tara?
-            abierto = PesajeLoteModel.abierto(self.ingreso_actual["id_pesaje"])
+            if datos_lote["id_proveedor"] is None:
+                raise ReglaNegocioError(
+                    "Seleccione el proveedor desde la lista antes de capturar."
+                )
 
-            if abierto is not None:
-                # Existe lote abierto → esta pesada es su TARA.
-                self._capturar_peso_lote_existente(abierto["lote"])
-                return
-            
-            self._capturar_nuevo_lote_con_peso()
+            # El Service decide automáticamente:
+            #
+            # 1. Primera pesada  -> BRUTO lote 1
+            # 2. Siguiente       -> TARA lote anterior
+            #                       + BRUTO lote siguiente
+            # 3. Última           -> TARA último lote
+            resultado = PesajeService.capturar(
+                self.ingreso_actual["id_pesaje"],
+                self.ultimo_peso,
+                datos_lote=datos_lote,
+            )
+
+            self._log_captura(resultado)
+
+            # Limpiar datos del formulario para el siguiente lote
+            self.view.limpiar_campos_lote()
+
+            self.view.mostrar_proximo_lote(ConfiguracionLotesModel.proximo_lote())
+
+            # Actualizar tabla
+            self._refrescar_lotes()
 
         except ReglaNegocioError as e:
-            QMessageBox.warning(self.view, "Capturar peso", str(e))
+            QMessageBox.warning(
+                self.view,
+                "Capturar peso",
+                str(e),
+            )
 
     def _capturar_nuevo_lote_con_peso(self):
         """
