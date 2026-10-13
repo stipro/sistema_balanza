@@ -253,18 +253,19 @@ class PesajeService:
 
     @classmethod
     def capturar(cls, id_pesaje, peso, datos_lote=None):
-        """
-        Botón CAPTURAR PESO. Una sola transacción:
+        """Captura el peso y, cuando corresponde, crea el siguiente lote en una transacción.
 
-        - Hay lote abierto o lotes esperando bruto -> la cadena decide
-          (TARA del abierto y/o BRUTO del siguiente). `datos_lote` se ignora.
-        - No hay lotes ni capturas (primera pesada del camión) -> crea el
-          lote con `datos_lote` y la captura es su BRUTO.
-        - Todos los lotes ya están completos -> error (use AGREGAR LOTE o
-          GUARDAR). Nunca se pide otra pesada con el camión quieto.
+        Reglas:
+        - Primera captura sin lotes: crea el primer lote y lo asigna como BRUTO.
+        - Si ya existe un siguiente lote reservado, se respeta; no se crea otro.
+        - Si hay un lote abierto (espera TARA) y no existe siguiente lote, puede
+          crearse automáticamente el próximo lote. La captura queda como TARA
+          del lote abierto y BRUTO del nuevo lote.
+        - No se crea automáticamente si hay capturas huérfanas sin asignar.
+        - Si todos los lotes están completos, no se crea otro lote con una pesada
+          adicional; se debe usar AGREGAR LOTE o GUARDAR.
 
-        Si algo falla, no queda nada guardado (ni lote ni correlativo).
-        Devuelve el dict de la captura, con 'lote_creado' si se creó un lote.
+        Si una validación falla, la transacción revierte lote, captura y correlativo.
         """
 
         peso = cls._normalizar_peso(peso)
@@ -272,22 +273,39 @@ class PesajeService:
         with transaccion() as cx:
             cls._ingreso_abierto(id_pesaje, cx)
 
-            espera = PesajeLoteModel.abierto(
-                id_pesaje, cx
-            ) or PesajeLoteModel.siguiente_sin_bruto(id_pesaje, cx)
-
+            abierto = PesajeLoteModel.abierto(id_pesaje, cx)
+            siguiente = PesajeLoteModel.siguiente_sin_bruto(id_pesaje, cx)
             sin_capturas = PesajeRegistroModel.ultimo_valido(id_pesaje, cx) is None
-
             lote_creado = None
 
-            if espera is None and sin_capturas:
-
+            # Primera captura: debe existir el primer lote antes de guardar el peso.
+            if abierto is None and siguiente is None and sin_capturas:
                 if datos_lote is None:
                     raise ReglaNegocioError(
-                        "Seleccione el proveedor y complete los datos del lote "
-                        "antes de la primera captura."
+                        "Complete los datos del primer lote antes de capturar."
+                    )
+                cls._validar_datos_lote_nuevo(datos_lote)
+                id_lote = cls._agregar_lote_tx(cx, id_pesaje, datos_lote)
+                lote_creado = PesajeLoteModel.by_id(id_lote, cx)["lote"]
+
+            # La captura intermedia también será BRUTO del siguiente lote,
+            # pero solo si no había un lote ya reservado para recibirla.
+            elif abierto is not None and siguiente is None:
+                if datos_lote is None:
+                    raise ReglaNegocioError(
+                        "No hay un siguiente lote reservado. Complete los datos "
+                        "del nuevo lote para crearlo automáticamente, o use AGREGAR LOTE."
                     )
 
+                huerfanas = PesajeRegistroModel.contar_huerfanas(id_pesaje, cx)
+                if huerfanas:
+                    raise ReglaNegocioError(
+                        "No se puede crear automáticamente el siguiente lote porque "
+                        f"hay {huerfanas} pesada(s) sin asignar. Revise los pesajes "
+                        "pendientes antes de continuar."
+                    )
+
+                cls._validar_datos_lote_nuevo(datos_lote)
                 id_lote = cls._agregar_lote_tx(cx, id_pesaje, datos_lote)
                 lote_creado = PesajeLoteModel.by_id(id_lote, cx)["lote"]
 
@@ -295,6 +313,25 @@ class PesajeService:
             resultado["lote_creado"] = lote_creado
 
         return resultado
+
+    @staticmethod
+    def _validar_datos_lote_nuevo(datos_lote):
+        """Valida los datos mínimos antes de reservar un lote automáticamente."""
+        if not datos_lote.get("id_proveedor"):
+            raise ReglaNegocioError(
+                "Seleccione el proveedor desde la lista antes de crear el lote."
+            )
+
+        tipo_carga = datos_lote.get("tipo_carga")
+        if tipo_carga not in ("SACO", "GRANEL"):
+            raise ReglaNegocioError("Seleccione si la carga es SACO o GRANEL.")
+
+        if tipo_carga == "SACO":
+            sacos = datos_lote.get("cantidad_sacos")
+            if isinstance(sacos, bool) or not isinstance(sacos, int) or sacos <= 0:
+                raise ReglaNegocioError(
+                    "Un lote en SACOS debe tener una cantidad de sacos mayor que 0."
+                )
 
     @classmethod
     def anular_ultima_captura(cls, id_pesaje, motivo):

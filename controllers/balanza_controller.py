@@ -448,13 +448,9 @@ class BalanzaController:
             # Sincronizar datos generales del ingreso
             self._sincronizar_datos_generales()
 
-            # Obtener datos del lote para la primera captura
+            # El Service decide si necesita crear un lote nuevo.
+            # Si ya existe un lote reservado, estos datos se ignoran.
             datos_lote = self.view.obtener_datos_lote()
-
-            if datos_lote["id_proveedor"] is None:
-                raise ReglaNegocioError(
-                    "Seleccione el proveedor desde la lista antes de capturar."
-                )
 
             # El Service decide automáticamente:
             #
