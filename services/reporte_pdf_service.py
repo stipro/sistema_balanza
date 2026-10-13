@@ -7,6 +7,7 @@ import os
 import re
 import sys
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -34,6 +35,37 @@ class ReportePdfService:
     def _limpiar_nombre(valor):
         valor = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(valor or "").strip())
         return valor.strip("._") or "sin_dato"
+
+    @staticmethod
+    def _formatear_hora(valor):
+        """Convierte una hora de 24 horas a formato de 12 horas AM/PM."""
+        texto = str(valor or "").strip()
+        if not texto:
+            return ""
+
+        for formato in ("%H:%M:%S", "%H:%M", "%I:%M:%S %p", "%I:%M %p"):
+            try:
+                return datetime.strptime(texto.upper(), formato).strftime("%I:%M %p")
+            except ValueError:
+                continue
+
+        # Si la hora viene en un formato inesperado, no ocultamos el dato.
+        return texto
+
+    @staticmethod
+    def _formatear_peso(valor, separador_decimal="."):
+        """Formatea un peso con tres decimales y separador configurable."""
+        if valor is None or str(valor).strip() == "":
+            return ""
+        try:
+            numero = Decimal(str(valor).strip().replace(",", "."))
+            numero = numero.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+            resultado = f"{numero:.3f}"
+            if separador_decimal != ".":
+                resultado = resultado.replace(".", separador_decimal)
+            return resultado
+        except (InvalidOperation, ValueError):
+            return str(valor).strip()
 
     @classmethod
     def generar_ticket(cls, parametros):
@@ -181,23 +213,23 @@ class ReportePdfService:
 
         # Fechas y horas de ambas pesadas.
         texto(x0, y, "PRIMERA PESADA :", 9, True)
-        texto(x0 + 119, y, f"{cls._texto(p, 'fecha1')}   {cls._texto(p, 'hora1')}", 8.5)
+        texto(x0 + 119, y, f"{cls._texto(p, 'fecha1')}   {cls._formatear_hora(p.get('hora1'))}", 8.5)
         texto(x_col2, y, "SEGUNDA PESADA :", 9, True)
-        texto(x0 + 430, y, f"{cls._texto(p, 'fecha2')} {cls._texto(p, 'hora2')}", 7.2)
+        texto(x0 + 430, y, f"{cls._texto(p, 'fecha2')} {cls._formatear_hora(p.get('hora2'))}", 7.2)
         y += 22
 
         # Pesos bruto y tara.
         texto(x0, y, "P. BRUTO :", 11, True)
-        texto(x0 + 198, y, f"{cls._texto(p, 'peso_bruto')} kg", 11, True, "right")
+        texto(x0 + 198, y, f"{cls._formatear_peso(p.get('peso_bruto'))} kg", 11, True, "right")
         texto(x_col2, y, "P. TARA :", 11, True)
-        texto(x_fin - 12, y, f"{cls._texto(p, 'peso_tara')} kg", 11, True, "right")
+        texto(x_fin - 12, y, f"{cls._formatear_peso(p.get('peso_tara'))} kg", 11, True, "right")
         y += 25
         linea(y, grosor=1.1)
         y += 31
 
         # Peso neto destacado, alineado a la derecha.
         texto(x0 + 292, y, "PESO NETO :", 13, True)
-        texto(x_fin - 43, y, cls._texto(p, "peso_neto"), 13, True, "right")
+        texto(x_fin - 43, y, cls._formatear_peso(p.get("peso_neto"), separador_decimal=","), 13, True, "right")
         texto(x_fin, y, "kg", 13, True, "right")
 
         # Firma del operador.
