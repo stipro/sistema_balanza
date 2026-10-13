@@ -325,6 +325,18 @@ class PesajeLoteModel(ModeloBase):
         return [dict(f) for f in filas]
 
     @classmethod
+    def detalle_por_id(cls, id_pesaje_lote, conexion=None):
+        """Devuelve un único lote con los datos de v_lotes_detalle."""
+
+        with lectura(conexion) as cx:
+            fila = cx.execute(
+                "SELECT * FROM v_lotes_detalle WHERE id_pesaje_lote = ?",
+                (id_pesaje_lote,),
+            ).fetchone()
+
+        return dict(fila) if fila is not None else None
+
+    @classmethod
     def abierto(cls, id_pesaje, conexion=None):
         """Lote con bruto asignado y sin tara (el que espera su 2ª pesada)."""
 

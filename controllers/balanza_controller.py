@@ -23,6 +23,7 @@ from models.pesajes import (
     PesajeModel,
 )
 from services.pesaje_service import PesajeService
+from services.reporte_pdf_service import ReportePdfService
 from views.pendientes_view import PendientesView
 
 from config.settings import (
@@ -104,6 +105,7 @@ class BalanzaController:
         self.view.btn_agregar_lote.clicked.connect(self.agregar_lote)
         self.view.btn_capturar.clicked.connect(self.capturar_peso)
         self.view.btn_guardar.clicked.connect(self.guardar_ingreso)
+        self.view.btn_imprimir.clicked.connect(self.imprimir_lote)
         self.view.btn_pendientes.clicked.connect(self.mostrar_pendientes)
 
         # Configuración de lotes
@@ -1300,5 +1302,42 @@ class BalanzaController:
         self.view.bloquear_configuracion(False)
 
     # LOG
+    def imprimir_lote(self):
+        """Genera el ticket PDF únicamente del lote seleccionado en la tabla."""
+        lote_texto = self.view.obtener_fila_lote_seleccionada()
+
+        if not lote_texto:
+            QMessageBox.information(
+                self.view,
+                "Imprimir ticket",
+                "Seleccione un lote de la tabla antes de imprimir.",
+            )
+            return
+
+        id_lote = self._mapa_lotes.get(lote_texto)
+        if id_lote is None:
+            QMessageBox.warning(
+                self.view,
+                "Imprimir ticket",
+                "No se pudo identificar el lote seleccionado. Actualice la tabla e inténtelo nuevamente.",
+            )
+            return
+
+        try:
+            parametros = PesajeService.preparar_datos_ticket(id_lote)
+            ruta_pdf = ReportePdfService.generar_ticket(parametros)
+            self.log(
+                f"[PDF] Ticket del lote {lote_texto} generado: {ruta_pdf}"
+            )
+        except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "Imprimir ticket", str(e))
+        except Exception as e:
+            self.log(f"[ERROR PDF] No se pudo imprimir el lote {lote_texto}: {e}")
+            QMessageBox.critical(
+                self.view,
+                "Error al generar el ticket",
+                f"No se pudo generar el PDF del lote seleccionado.\n\n{e}",
+            )
+
     def log(self, texto):
         self.view.log(texto)

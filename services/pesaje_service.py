@@ -451,6 +451,100 @@ class PesajeService:
         return PesajeLoteModel.detalle(id_pesaje, incluir_anulados, descendente)
 
     @classmethod
+    def preparar_datos_ticket(cls, id_pesaje_lote):
+        """
+        Prepara los datos del ticket PDF para un solo lote.
+
+        Solo permite imprimir lotes COMPLETADOS que tengan bruto, tara,
+        fechas y peso neto. La vista SQL es la fuente de los pesos.
+        """
+        lote = PesajeLoteModel.detalle_por_id(id_pesaje_lote)
+
+        if lote is None:
+            raise ReglaNegocioError("El lote seleccionado ya no existe.")
+
+        if lote.get("estado") == "ANULADO":
+            raise ReglaNegocioError("No se puede imprimir un lote anulado.")
+
+        campos_pesada = (
+            lote.get("peso_bruto"),
+            lote.get("peso_tara"),
+            lote.get("peso_neto"),
+            lote.get("fecha_bruto"),
+            lote.get("fecha_tara"),
+        )
+        if lote.get("estado") != "COMPLETADO" or any(v is None for v in campos_pesada):
+            raise ReglaNegocioError(
+                "No se puede imprimir este lote porque todavía no tiene las dos "
+                "pesadas completas (bruto y tara)."
+            )
+
+        def texto(valor):
+            return "" if valor is None else str(valor).strip()
+
+        def fecha_hora(valor):
+            """Convierte fecha ISO de SQLite a fecha y hora legibles."""
+            if not valor:
+                return "", ""
+            from datetime import datetime
+
+            try:
+                dt = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+                return dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M:%S")
+            except ValueError:
+                partes = str(valor).replace("T", " ").split(" ", 1)
+                return (partes[0] if partes else "", partes[1] if len(partes) > 1 else "")
+
+        def peso(valor):
+            # Los pesos de la balanza se guardan en kg enteros.
+            numero = float(valor)
+            return str(int(numero)) if numero.is_integer() else f"{numero:g}"
+
+        fecha1, hora1 = fecha_hora(lote.get("fecha_bruto"))
+        fecha2, hora2 = fecha_hora(lote.get("fecha_tara"))
+
+        tipo_carga = texto(lote.get("tipo_carga")).upper()
+        sacos = (
+            texto(lote.get("cantidad_sacos"))
+            if tipo_carga == "SACO"
+            else "GRANEL"
+        )
+
+        return {
+            # Metadato utilizado para nombrar el PDF generado.
+            "ticket": texto(lote.get("ticket")),
+            "empresa": "MINERA MH S.A.C.",
+            "titulo": "TICKET DE PESAJE",
+            "direccion": "EL BOSQUE JS SECTOR PAMPA LA AGUADA CHALA CARAVELI AREQUIPA",
+            "placa": texto(lote.get("placa")),
+            "carreta": texto(lote.get("carreta")),
+            "lote": texto(lote.get("lote")),
+            "chofer": texto(lote.get("chofer")),
+            "licencia": texto(lote.get("brevete")),
+            "transportista": texto(lote.get("transportista")),
+            "transportista_ruc": texto(lote.get("ruc_transportista")),
+            "proveedor": texto(lote.get("proveedor")),
+            "proveedor_ruc": texto(lote.get("ruc_proveedor")),
+            "concesion": texto(lote.get("concesion")),
+            "codigo": texto(lote.get("codigo_concesion")),
+            "procedencia": texto(lote.get("procedencia")),
+            "producto": texto(lote.get("producto")),
+            "n_sacos": sacos,
+            "gr_remit": texto(lote.get("guia_proveedor")),
+            "gr_transp": texto(lote.get("guia_transportista")),
+            "observacion": texto(lote.get("observacion")),
+            "advertencia": "",
+            "fecha1": fecha1,
+            "hora1": hora1,
+            "fecha2": fecha2,
+            "hora2": hora2,
+            "peso_bruto": peso(lote.get("peso_bruto")),
+            "peso_tara": peso(lote.get("peso_tara")),
+            "peso_neto": peso(lote.get("peso_neto")),
+            "nota_pie": "",
+        }
+
+    @classmethod
     def filas_para_tabla(cls, id_pesaje, descendente=False):
         """
         Tuplas de 8 valores para view.cargar_pesajes():
