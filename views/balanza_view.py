@@ -80,6 +80,7 @@ class BalanzaView(QMainWindow):
     # Se emite al cerrar la ventana (el controller puede conectarse
     # para cerrar los puertos de forma ordenada)
     cerrando = pyqtSignal()
+    solicitar_cambio_base_datos = pyqtSignal()
 
     def __init__(self):
 
@@ -197,6 +198,18 @@ class BalanzaView(QMainWindow):
 
         # ---------------- CONFIGURACIÓN ----------------
         menu_config = barra.addMenu("&Configuración")
+
+        self.act_cambiar_base_datos = QAction(
+            "Base de datos SQLite...",
+            self
+        )
+
+        self.act_cambiar_base_datos.triggered.connect(
+            self.solicitar_cambio_base_datos.emit
+        )
+
+        menu_config.addAction(self.act_cambiar_base_datos)
+        menu_config.addSeparator()
 
         self.act_configuracion = QAction("Mostrar configuración avanzada", self)
         self.act_configuracion.setCheckable(True)
