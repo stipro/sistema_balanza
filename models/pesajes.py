@@ -91,6 +91,31 @@ class PesajeModel(ModeloBase):
 
         return [dict(f) for f in filas]
 
+
+    @classmethod
+    def todos(cls, conexion=None):
+        """Todos los ingresos, con contadores de lotes y capturas."""
+        with lectura(conexion) as cx:
+            filas = cx.execute(
+                """
+                SELECT p.id_pesaje, p.ticket, p.estado, p.created_at,
+                       v.placa, c.nombre AS chofer,
+                       (SELECT COUNT(*) FROM pesajes_lotes l
+                         WHERE l.id_pesaje = p.id_pesaje
+                           AND l.estado <> 'ANULADO') AS total_lotes,
+                       (SELECT COUNT(*) FROM pesajes_lotes l
+                         WHERE l.id_pesaje = p.id_pesaje
+                           AND l.estado = 'COMPLETADO') AS lotes_completos,
+                       (SELECT COUNT(*) FROM pesajes_registros r
+                         WHERE r.id_pesaje = p.id_pesaje AND r.anulado = 0) AS capturas
+                FROM pesajes p
+                LEFT JOIN vehiculos v ON v.id_vehiculo = p.id_vehiculo
+                LEFT JOIN conductores c ON c.id_conductor = p.id_conductor
+                ORDER BY p.created_at DESC, p.ticket DESC
+                """
+            ).fetchall()
+        return [dict(f) for f in filas]
+
     @classmethod
     def update_by_id(cls, id_, datos, conexion=None):
         """Solo mientras el ingreso está EN_PROCESO."""
@@ -230,6 +255,31 @@ class PesajeLoteModel(ModeloBase):
     def add(cls, datos, conexion=None):
 
         return super().add(cls._normalizar(datos), conexion)
+
+
+    @classmethod
+    def todos(cls, conexion=None):
+        """Todos los ingresos, con contadores de lotes y capturas."""
+        with lectura(conexion) as cx:
+            filas = cx.execute(
+                """
+                SELECT p.id_pesaje, p.ticket, p.estado, p.created_at,
+                       v.placa, c.nombre AS chofer,
+                       (SELECT COUNT(*) FROM pesajes_lotes l
+                         WHERE l.id_pesaje = p.id_pesaje
+                           AND l.estado <> 'ANULADO') AS total_lotes,
+                       (SELECT COUNT(*) FROM pesajes_lotes l
+                         WHERE l.id_pesaje = p.id_pesaje
+                           AND l.estado = 'COMPLETADO') AS lotes_completos,
+                       (SELECT COUNT(*) FROM pesajes_registros r
+                         WHERE r.id_pesaje = p.id_pesaje AND r.anulado = 0) AS capturas
+                FROM pesajes p
+                LEFT JOIN vehiculos v ON v.id_vehiculo = p.id_vehiculo
+                LEFT JOIN conductores c ON c.id_conductor = p.id_conductor
+                ORDER BY p.created_at DESC, p.ticket DESC
+                """
+            ).fetchall()
+        return [dict(f) for f in filas]
 
     @classmethod
     def update_by_id(cls, id_, datos, conexion=None):

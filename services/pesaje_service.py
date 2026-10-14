@@ -143,17 +143,38 @@ class PesajeService:
 
     @classmethod
     def actualizar_lote(cls, id_lote, datos):
+        """Actualiza datos del lote; en CONFIRMADO solo campos comerciales.
 
-        campos = PesajeLoteModel.solo_columnas(datos, excluir=("id_pesaje", "orden"))
-
+        Las capturas, referencias bruto/tara, estado y datos de operación no
+        se aceptan desde este método. Un ingreso ANULADO es inmutable.
+        """
+        campos_permitidos_confirmado = {
+            "id_proveedor", "guia_proveedor", "guia_transportista",
+            "id_concesion", "procedencia", "producto", "observacion",
+            "tipo_carga", "cantidad_sacos", "priorizar_analisis",
+        }
         with transaccion() as cx:
             lote = PesajeLoteModel.by_id(id_lote, cx)
-
             if lote is None:
                 raise ReglaNegocioError("El lote no existe.")
-
-            cls._ingreso_abierto(lote["id_pesaje"], cx)
-
+            ingreso = PesajeModel.by_id(lote["id_pesaje"], cx)
+            if ingreso is None:
+                raise ReglaNegocioError("El ingreso del lote no existe.")
+            campos = PesajeLoteModel.solo_columnas(
+                datos, excluir=("id_pesaje", "orden", "lote",
+                                "id_registro_bruto", "id_registro_tara",
+                                "estado", "motivo_anulacion")
+            )
+            if ingreso["estado"] == "ANULADO":
+                raise ReglaNegocioError("No se pueden modificar lotes de un ingreso anulado.")
+            if ingreso["estado"] == "CONFIRMADO":
+                no_permitidos = set(campos) - campos_permitidos_confirmado
+                if no_permitidos:
+                    raise ReglaNegocioError(
+                        "Un ingreso confirmado solo permite editar datos comerciales del lote."
+                    )
+            elif ingreso["estado"] != "EN_PROCESO":
+                raise ReglaNegocioError("El estado del ingreso no permite modificar el lote.")
             return PesajeLoteModel.update_by_id(id_lote, campos, cx)
 
     @classmethod
@@ -442,8 +463,11 @@ class PesajeService:
     # CONSULTAS PARA LA INTERFAZ
     @classmethod
     def ingresos_pendientes(cls):
-
         return PesajeModel.pendientes()
+
+    @classmethod
+    def todos_los_ingresos(cls):
+        return PesajeModel.todos()
 
     @classmethod
     def lotes_detalle(cls, id_pesaje, incluir_anulados=False, descendente=False):

@@ -266,7 +266,7 @@ class BalanzaView(QMainWindow):
             """)
 
         self.btn_pendientes = self._boton(
-            "📋  PESAJES PENDIENTES", 40, "btn_pendientes"
+            "📋  PESAJES", 40, "btn_pendientes"
         )
 
         self.btn_actualizar_maestros = self._boton(
@@ -395,6 +395,33 @@ class BalanzaView(QMainWindow):
 
         # Ticket siempre bloqueado
         self.txt_ticket.setEnabled(False)
+
+    def aplicar_modo_ingreso(self, estado):
+        """Ajusta la interfaz según el estado del ingreso cargado."""
+        estado = (estado or "").upper()
+        if estado == "EN_PROCESO":
+            self.bloquear_formulario(False)
+            self.btn_agregar_lote.setEnabled(True)
+            self.btn_capturar.setEnabled(True)
+            self.btn_guardar.setEnabled(True)
+            self.btn_nuevo.setEnabled(True)
+            return
+
+        # En ingresos cerrados no se pueden cambiar datos generales ni capturas.
+        self.bloquear_formulario(True)
+        # Los campos comerciales de un CONFIRMADO se habilitan solo al
+        # seleccionar MODIFICAR sobre un lote concreto.
+        for campo in (self.txt_proveedor, self.txt_ruc_proveedor,
+                      self.txt_guia_proveedor, self.txt_guia_transportista,
+                      self.txt_concesion, self.txt_codigo, self.txt_procedencia,
+                      self.txt_producto, self.txt_observacion,
+                      self.cmb_tipo_carga, self.txt_sacos):
+            campo.setEnabled(False)
+        self.btn_agregar_lote.setEnabled(False)
+        self.btn_capturar.setEnabled(False)
+        self.btn_guardar.setEnabled(False)
+        self.btn_nuevo.setEnabled(True)
+        self.btn_imprimir.setEnabled(True)
 
     def mostrar_ticket(self, ticket):
         self.txt_ticket.setText(str(ticket))
@@ -1317,6 +1344,48 @@ class BalanzaView(QMainWindow):
             "cantidad_sacos": self.txt_sacos.value() if tipo == "SACO" else None,
             # "priorizar_analisis": self.chk_priorizar.isChecked(),
         }
+
+    def cargar_datos_lote(self, lote):
+        """Carga los datos comerciales de un lote en el formulario."""
+        self.txt_lote.setText(str(lote.get("lote") or ""))
+        self.txt_guia_proveedor.setText(str(lote.get("guia_proveedor") or ""))
+        self.txt_guia_transportista.setText(str(lote.get("guia_transportista") or ""))
+        self.txt_procedencia.setText(str(lote.get("procedencia") or ""))
+        self.txt_producto.setText(str(lote.get("producto") or ""))
+        self.txt_observacion.setText(str(lote.get("observacion") or ""))
+        tipo = lote.get("tipo_carga") or "SACO"
+        idx = self.cmb_tipo_carga.findText(tipo)
+        if idx >= 0:
+            self.cmb_tipo_carga.setCurrentIndex(idx)
+        self.txt_sacos.setValue(int(lote.get("cantidad_sacos") or 0))
+
+        id_proveedor = lote.get("id_proveedor")
+        self.proveedor_seleccionado = None
+        for fila in self.maestros.get("proveedores", []):
+            if fila[0] == id_proveedor:
+                self.proveedor_seleccionado = {
+                    "id_proveedor": fila[0], "nombre": fila[1], "ruc": fila[2]
+                }
+                self.txt_proveedor.setText(str(fila[1] or ""))
+                self.txt_ruc_proveedor.setText(str(fila[2] or ""))
+                break
+        if self.proveedor_seleccionado is None:
+            self.txt_proveedor.clear()
+            self.txt_ruc_proveedor.clear()
+
+        id_concesion = lote.get("id_concesion")
+        self.concesion_seleccionada = None
+        for fila in self.maestros.get("concesiones", []):
+            if fila[0] == id_concesion:
+                self.concesion_seleccionada = {
+                    "id_concesion": fila[0], "nombre": fila[1], "codigo": fila[2]
+                }
+                self.txt_concesion.setText(str(fila[1] or ""))
+                self.txt_codigo.setText(str(fila[2] or ""))
+                break
+        if self.concesion_seleccionada is None:
+            self.txt_concesion.clear()
+            self.txt_codigo.clear()
 
     def limpiar_campos_lote(self):
         """Después de agregar un lote: limpia lo propio del lote,

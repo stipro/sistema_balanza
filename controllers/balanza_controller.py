@@ -25,6 +25,7 @@ from models.pesajes import (
 from services.pesaje_service import PesajeService
 from services.reporte_pdf_service import ReportePdfService
 from views.pendientes_view import PendientesView
+from views.pesajes_view import PesajesView
 
 from config.settings import (
     BAUDRATE_BALANZA_DEFAULT,
@@ -63,6 +64,7 @@ class BalanzaController:
 
         self.ingreso_actual = None
         self._mapa_lotes = {}
+        self._lote_en_edicion = None
         # {
         #     "id_pesaje": int,
         #     "ticket": int
@@ -106,7 +108,8 @@ class BalanzaController:
         self.view.btn_capturar.clicked.connect(self.capturar_peso)
         self.view.btn_guardar.clicked.connect(self.guardar_ingreso)
         self.view.btn_imprimir.clicked.connect(self.imprimir_lote)
-        self.view.btn_pendientes.clicked.connect(self.mostrar_pendientes)
+        self.view.btn_modificar.clicked.connect(self.modificar_lote_seleccionado)
+        self.view.btn_pendientes.clicked.connect(self.mostrar_pesajes)
 
         # Configuración de lotes
         self.view.configuracion_lotes.btn_guardar.clicked.connect(
@@ -650,6 +653,89 @@ class BalanzaController:
         except Exception as e:
 
             self.log(f"[ERROR] No se pudieron verificar " f"los pendientes: {e}")
+
+    def modificar_lote_seleccionado(self):
+        """Carga y guarda datos comerciales del lote seleccionado.
+
+        En ingresos CONFIRMADO solo permite datos del lote; el Service vuelve
+        a validar las reglas para impedir modificaciones a las capturas.
+        """
+        if not self.ingreso_actual:
+            QMessageBox.information(self.view, "Modificar lote", "Primero abra un ingreso desde PESAJES.")
+            return
+
+        estado = PesajeModel.by_id(self.ingreso_actual["id_pesaje"])
+        if not estado:
+            QMessageBox.warning(self.view, "Modificar lote", "El ingreso ya no existe.")
+            return
+        estado_ingreso = estado.get("estado")
+        if estado_ingreso == "ANULADO":
+            QMessageBox.information(self.view, "Modificar lote", "Un ingreso anulado es de solo lectura.")
+            return
+
+        lote_texto = self.view.obtener_fila_lote_seleccionada()
+        if not lote_texto or lote_texto not in self._mapa_lotes:
+            QMessageBox.information(self.view, "Modificar lote", "Seleccione un lote en la tabla.")
+            return
+        id_lote = self._mapa_lotes[lote_texto]
+
+        # Primer clic: cargar el lote seleccionado en el formulario.
+        if self._lote_en_edicion != id_lote:
+            lote = PesajeLoteModel.detalle_por_id(id_lote)
+            if not lote:
+                QMessageBox.warning(self.view, "Modificar lote", "No se encontró el lote seleccionado.")
+                return
+            self.view.cargar_datos_lote(lote)
+            self._lote_en_edicion = id_lote
+            self.view.btn_modificar.setText("💾  GUARDAR CAMBIOS")
+            for campo in (self.view.txt_proveedor, self.view.txt_ruc_proveedor,
+                          self.view.txt_guia_proveedor, self.view.txt_guia_transportista,
+                          self.view.txt_concesion, self.view.txt_codigo,
+                          self.view.txt_procedencia, self.view.txt_producto,
+                          self.view.txt_observacion, self.view.cmb_tipo_carga,
+                          self.view.txt_sacos):
+                campo.setEnabled(True)
+            return
+
+        # Segundo clic: persistir solo los campos comerciales permitidos.
+        try:
+            datos = self.view.obtener_datos_lote()
+            PesajeService.actualizar_lote(id_lote, datos)
+            self._lote_en_edicion = None
+            self.view.btn_modificar.setText("✎  MODIFICAR")
+            self.view.aplicar_modo_ingreso(estado_ingreso)
+            self._refrescar_lotes()
+            QMessageBox.information(self.view, "Modificar lote", "Los datos del lote se guardaron correctamente.")
+            self.log(f"[OK] Datos comerciales actualizados para lote {lote_texto}.")
+        except Exception as e:
+            QMessageBox.warning(self.view, "Modificar lote", f"No se pudieron guardar los cambios.\n\n{e}")
+
+    def mostrar_pesajes(self):
+        """Lista todos los ingresos y abre el seleccionado en modo seguro."""
+        self._limpiar_ingreso_vacio()
+        try:
+            ingresos = PesajeService.todos_los_ingresos()
+        except Exception as e:
+            QMessageBox.warning(self.view, "Pesajes", f"No se pudieron cargar los ingresos.\n\n{e}")
+            return
+        if not ingresos:
+            QMessageBox.information(self.view, "Pesajes", "Todavía no hay ingresos registrados.")
+            return
+        dialogo = PesajesView(ingresos, self.view)
+        if dialogo.exec() != PesajesView.DialogCode.Accepted or not dialogo.id_seleccionado:
+            return
+        ingreso = PesajeModel.by_id(dialogo.id_seleccionado)
+        if not ingreso:
+            QMessageBox.warning(self.view, "Pesajes", "El ingreso seleccionado ya no existe.")
+            return
+        self.ingreso_actual = {"id_pesaje": ingreso["id_pesaje"], "ticket": ingreso["ticket"]}
+        self.ultimo_peso = None
+        self.view.preparar_nuevo_registro(ingreso["ticket"], ConfiguracionLotesModel.proximo_lote())
+        self.view.cargar_datos_generales(ingreso)
+        self.view.mostrar_ticket(ingreso["ticket"])
+        self._refrescar_lotes()
+        self.view.aplicar_modo_ingreso(ingreso["estado"])
+        self.log(f"[CONSULTA] Ticket {ingreso['ticket']} abierto en estado {ingreso['estado']}.")
 
     def mostrar_pendientes(self):
         """
