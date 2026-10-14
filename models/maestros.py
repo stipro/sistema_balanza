@@ -314,6 +314,87 @@ class TransportistaModel(MaestroModelo):
 class ConcesionModel(MaestroModelo):
     tabla = "concesiones"
     pk = "id_concesion"
-    columnas = ("nombre", "codigo", "id_externo", "activo")
-    campos_vista = ("nombre", "codigo")
+    columnas = (
+        "nombre", "codigo", "distrito", "provincia", "departamento",
+        "id_externo", "activo"
+    )
+    campos_vista = ("nombre","codigo","distrito","provincia","departamento",)
     campo_orden = "nombre"
+
+    @classmethod
+    def sincronizar_desde_api(cls, registros):
+        """
+        Sincroniza concesiones activas desde GET /api/concesiones.
+        Conserva el ID local para no romper referencias de pesajes históricos.
+        """
+        if not isinstance(registros, list):
+            raise ValueError("La API no devolvió una lista de concesiones.")
+
+        insertados = 0
+        actualizados = 0
+
+        with transaccion() as cx:
+            for registro in registros:
+                if not isinstance(registro, dict):
+                    raise ValueError(
+                        "La API devolvió una concesión con formato inválido."
+                    )
+
+                id_remoto = registro.get("id_concesion")
+                codigo = str(registro.get("codigo_concesion") or "").strip()
+                nombre = str(registro.get("nombre_concesion") or "").strip()
+                distrito = str(registro.get("distrito_concesion") or "").strip()
+                provincia = str(registro.get("provincia_concesion") or "").strip()
+                departamento = str(registro.get("departamento_concesion") or "").strip()
+
+                if id_remoto is None or not codigo or not nombre:
+                    raise ValueError(
+                        "Una concesión de la API no contiene "
+                        "id_concesion, código o nombre válido."
+                    )
+
+                id_externo = str(id_remoto)
+                existente = cx.execute(
+                    f"SELECT {cls.pk}, nombre, codigo, distrito, provincia, "
+                    f"departamento, activo, id_externo FROM {cls.tabla} "
+                    "WHERE id_externo = ?",
+                    (id_externo,),
+                ).fetchone()
+
+                # Si ya existía una concesión local, vincularla por código y
+                # conservar su PK para no alterar las referencias históricas.
+                if existente is None:
+                    existente = cx.execute(
+                        f"SELECT {cls.pk}, nombre, codigo, distrito, provincia, "
+                        f"departamento, activo, id_externo FROM {cls.tabla} "
+                        "WHERE codigo = ?",
+                        (codigo,),
+                    ).fetchone()
+
+                datos = {
+                    "nombre": nombre,
+                    "codigo": codigo,
+                    "distrito": distrito,
+                    "provincia": provincia,
+                    "departamento": departamento,
+                    "id_externo": id_externo,
+                    "activo": 1,
+                }
+
+                if existente:
+                    cambio = any(
+                        existente[campo] != valor
+                        for campo, valor in datos.items()
+                    )
+                    if cambio:
+                        cls.update_by_id(existente[cls.pk], datos, cx)
+                        actualizados += 1
+                else:
+                    cls.add(datos, cx)
+                    insertados += 1
+
+        return {
+            "insertados": insertados,
+            "actualizados": actualizados,
+            "desactivados": 0,
+        }

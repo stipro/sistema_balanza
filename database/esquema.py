@@ -6,7 +6,7 @@ from database.conexion import obtener_conexion, transaccion
 
 # Súbelo cuando cambies el esquema. Si la BD existente tiene otra versión,
 # inicializar_base_datos() avisa en lugar de dejar tablas viejas a medias.
-VERSION_ESQUEMA = 2
+VERSION_ESQUEMA = 3
 
 _AHORA_SQL = "strftime('%Y-%m-%dT%H:%M:%S','now','localtime')"
 
@@ -52,7 +52,8 @@ MAESTROS = [
     (
         "concesiones",
         "id_concesion",
-        "nombre TEXT NOT NULL, codigo TEXT NOT NULL UNIQUE",
+        "nombre TEXT NOT NULL, codigo TEXT NOT NULL UNIQUE, "
+        "distrito TEXT, provincia TEXT, departamento TEXT",
     ),
 ]
 
@@ -198,6 +199,9 @@ VISTA_LOTES = """
         co.id_concesion,
         co.nombre AS concesion,
         co.codigo AS codigo_concesion,
+        co.distrito AS distrito_concesion,
+        co.provincia AS provincia_concesion,
+        co.departamento AS departamento_concesion,
         ve.placa AS placa,
         ca.placa AS carreta,
         cd.nombre AS chofer,

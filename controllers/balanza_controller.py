@@ -12,6 +12,7 @@ from models.base import ReglaNegocioError
 from services.api_conductores_service import ApiConductoresService
 from services.api_proveedores_service import ApiProveedoresService
 from services.api_transportistas_service import ApiTransportistasService
+from services.api_concesiones_service import ApiConcesionesService
 from models.maestros import (
     VehiculoModel,
     CarretaModel,
@@ -166,8 +167,8 @@ class BalanzaController:
 
     def actualizar_maestros(self):
         """
-        Sincroniza conductores, proveedores y transportistas desde la API comercial.
-        Después recarga todos los maestros desde SQLite.
+        Sincroniza conductores, proveedores, transportistas y concesiones
+        desde la API comercial. Después recarga los maestros desde SQLite.
 
         Los modelos conservan sus IDs locales para no afectar pesajes históricos.
         """
@@ -193,7 +194,13 @@ class BalanzaController:
                 registros_transportistas
             )
 
-            # 4. Recargar todos los maestros desde SQLite.
+            # 4. Sincronizar concesiones.
+            registros_concesiones = ApiConcesionesService.obtener_concesiones()
+            resultado_concesiones = ConcesionModel.sincronizar_desde_api(
+                registros_concesiones
+            )
+
+            # 5. Recargar todos los maestros desde SQLite.
             self.cargar_maestros()
 
             self.log(
@@ -212,6 +219,11 @@ class BalanzaController:
                 f"{resultado_transportistas['insertados']} nuevos, "
                 f"{resultado_transportistas['actualizados']} actualizados."
             )
+            self.log(
+                "[OK] Concesiones: "
+                f"{resultado_concesiones['insertados']} nuevas, "
+                f"{resultado_concesiones['actualizados']} actualizadas."
+            )
 
             QMessageBox.information(
                 self.view,
@@ -227,6 +239,9 @@ class BalanzaController:
                 "TRANSPORTISTAS\n"
                 f"Nuevos: {resultado_transportistas['insertados']}\n"
                 f"Actualizados: {resultado_transportistas['actualizados']}\n\n"
+                "CONCESIONES\n"
+                f"Nuevas: {resultado_concesiones['insertados']}\n"
+                f"Actualizadas: {resultado_concesiones['actualizados']}\n\n"
                 "Los demás maestros se recargaron desde SQLite."
             )
 
@@ -239,7 +254,6 @@ class BalanzaController:
                 f"{e}\n\n"
                 "Los datos locales existentes se conservaron."
             )
-            # Aunque una API falle, mostrar los datos que ya están en SQLite.
             try:
                 self.cargar_maestros()
             except Exception as error_carga:

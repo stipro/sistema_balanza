@@ -1259,10 +1259,11 @@ class BalanzaView(QMainWindow):
 
                 return
 
+    
     def _seleccionar_concesion(self, texto):
         """
         Selecciona una concesión desde el autocompletado
-        y sincroniza nombre, código e ID interno.
+        y sincroniza nombre, código, procedencia e ID interno.
         """
 
         concesiones = self.maestros.get("concesiones", [])
@@ -1280,21 +1281,41 @@ class BalanzaView(QMainWindow):
             id_concesion = concesion[0]
             nombre = concesion[1]
             codigo = concesion[2]
+            distrito = concesion[3] or ""
+            provincia = concesion[4] or ""
+            departamento = concesion[5] or ""
 
-            # Desde CONCESIÓN: principal = nombre, complementario = código
-            # Desde CÓDIGO: principal = código, complementario = nombre
-            if (dato_principal == nombre and dato_complementario == codigo) or (
-                dato_principal == codigo and dato_complementario == nombre
-            ):
+            # Permite seleccionar desde el nombre o desde el código.
+            coincide = (
+                dato_principal == nombre
+                and dato_complementario == codigo
+            ) or (
+                dato_principal == codigo
+                and dato_complementario == nombre
+            )
+
+            if coincide:
                 self.concesion_seleccionada = {
                     "id_concesion": id_concesion,
                     "nombre": nombre,
                     "codigo": codigo,
+                    "distrito": distrito,
+                    "provincia": provincia,
+                    "departamento": departamento,
                 }
 
                 self.txt_concesion.setText(nombre)
                 self.txt_codigo.setText(codigo)
 
+                # Construir la procedencia sin guiones sobrantes
+                # cuando alguno de los campos esté vacío.
+                procedencia = " - ".join(
+                    dato.strip()
+                    for dato in (distrito, provincia, departamento)
+                    if dato and dato.strip()
+                )
+
+                self.txt_procedencia.setText(procedencia)
                 return
 
     # DATOS DE LA OPERACIÓN
