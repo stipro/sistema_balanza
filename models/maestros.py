@@ -157,6 +157,77 @@ class ProveedorModel(MaestroModelo):
     campo_orden = "nombre"
 
 
+    @classmethod
+    def sincronizar_desde_api(cls, registros):
+        """
+        Sincroniza proveedores activos devueltos por GET /api/proveedores.
+        Guarda el ID remoto en id_externo y conserva el PK local de SQLite.
+        Los proveedores ausentes no se desactivan porque la API solo devuelve activos.
+        """
+        if not isinstance(registros, list):
+            raise ValueError("La API no devolvió una lista de proveedores.")
+
+        insertados = 0
+        actualizados = 0
+
+        with transaccion() as cx:
+            for registro in registros:
+                if not isinstance(registro, dict):
+                    raise ValueError("La API devolvió un proveedor con formato inválido.")
+
+                id_remoto = registro.get("id_proveedor")
+                ruc = str(registro.get("ruc") or "").strip()
+                nombre = str(registro.get("razon_social") or "").strip()
+
+                if id_remoto is None or not ruc or not nombre:
+                    raise ValueError(
+                        "Un proveedor de la API no contiene id_proveedor, RUC "
+                        "o razon_social válido."
+                    )
+
+                id_externo = str(id_remoto)
+                existente = cx.execute(
+                    f"SELECT {cls.pk}, nombre, ruc, activo, id_externo "
+                    f"FROM {cls.tabla} WHERE id_externo = ?",
+                    (id_externo,),
+                ).fetchone()
+
+                # Si ya existía localmente por RUC, vincularlo para evitar duplicados.
+                if existente is None:
+                    existente = cx.execute(
+                        f"SELECT {cls.pk}, nombre, ruc, activo, id_externo "
+                        f"FROM {cls.tabla} WHERE ruc = ?",
+                        (ruc,),
+                    ).fetchone()
+
+                datos = {
+                    "nombre": nombre,
+                    "ruc": ruc,
+                    "id_externo": id_externo,
+                    "activo": 1,
+                }
+
+                if existente:
+                    cambio = (
+                        existente["nombre"] != nombre
+                        or existente["ruc"] != ruc
+                        or existente["activo"] != 1
+                        or existente["id_externo"] != id_externo
+                    )
+                    if cambio:
+                        cls.update_by_id(existente[cls.pk], datos, cx)
+                        actualizados += 1
+                else:
+                    cls.add(datos, cx)
+                    insertados += 1
+
+        return {
+            "insertados": insertados,
+            "actualizados": actualizados,
+            "desactivados": 0,
+        }
+
+
 class TransportistaModel(MaestroModelo):
     tabla = "transportistas"
     pk = "id_transportista"

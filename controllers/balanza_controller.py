@@ -10,6 +10,7 @@ from utils.parser_peso import ParserPeso
 
 from models.base import ReglaNegocioError
 from services.api_conductores_service import ApiConductoresService
+from services.api_proveedores_service import ApiProveedoresService
 from models.maestros import (
     VehiculoModel,
     CarretaModel,
@@ -164,34 +165,51 @@ class BalanzaController:
 
     def actualizar_maestros(self):
         """
-        Sincroniza conductores desde la API comercial y después recarga
-        todos los maestros locales en la interfaz.
-
-        Los demás maestros continúan cargándose desde SQLite; sus endpoints
-        se incorporarán cuando estén disponibles.
+        Sincroniza conductores y proveedores desde la API comercial.
+        Después recarga todos los maestros desde SQLite.
         """
         try:
             self.view.btn_actualizar_maestros.setEnabled(False)
             self.view.btn_actualizar_maestros.setText("Sincronizando...")
 
-            registros = ApiConductoresService.obtener_conductores()
-            resultado = ConductorModel.sincronizar_desde_api(registros)
+            # 1. Sincronizar conductores.
+            registros_conductores = ApiConductoresService.obtener_conductores()
+            resultado_conductores = ConductorModel.sincronizar_desde_api(
+                registros_conductores
+            )
 
+            # 2. Sincronizar proveedores.
+            registros_proveedores = ApiProveedoresService.obtener_proveedores()
+            resultado_proveedores = ProveedorModel.sincronizar_desde_api(
+                registros_proveedores
+            )
+
+            # 3. Recargar todos los maestros desde SQLite.
             self.cargar_maestros()
+
             self.log(
-                "[OK] Conductores sincronizados desde API: "
-                f"{resultado['insertados']} nuevos, "
-                f"{resultado['actualizados']} actualizados, "
-                f"{resultado['desactivados']} desactivados."
+                "[OK] Conductores: "
+                f"{resultado_conductores['insertados']} nuevos, "
+                f"{resultado_conductores['actualizados']} actualizados, "
+                f"{resultado_conductores['desactivados']} desactivados."
+            )
+            self.log(
+                "[OK] Proveedores: "
+                f"{resultado_proveedores['insertados']} nuevos, "
+                f"{resultado_proveedores['actualizados']} actualizados."
             )
 
             QMessageBox.information(
                 self.view,
                 "Actualizar maestros",
-                "Sincronización de conductores completada.\n\n"
-                f"Nuevos: {resultado['insertados']}\n"
-                f"Actualizados: {resultado['actualizados']}\n"
-                f"Desactivados: {resultado['desactivados']}\n\n"
+                "Sincronización completada.\n\n"
+                "CONDUCTORES\n"
+                f"Nuevos: {resultado_conductores['insertados']}\n"
+                f"Actualizados: {resultado_conductores['actualizados']}\n"
+                f"Desactivados: {resultado_conductores['desactivados']}\n\n"
+                "PROVEEDORES\n"
+                f"Nuevos: {resultado_proveedores['insertados']}\n"
+                f"Actualizados: {resultado_proveedores['actualizados']}\n\n"
                 "Los demás maestros se recargaron desde SQLite."
             )
 
@@ -200,10 +218,15 @@ class BalanzaController:
             QMessageBox.warning(
                 self.view,
                 "Actualizar maestros",
-                "No se pudieron sincronizar los conductores.\n\n"
-                f"{e}\n\n"
+                "No se pudo completar la sincronización de maestros.\\n\\n"
+                f"{e}\\n\\n"
                 "Los datos locales existentes se conservaron."
             )
+            # Aunque una API falle, mostrar los datos que ya están en SQLite.
+            try:
+                self.cargar_maestros()
+            except Exception as error_carga:
+                self.log(f"[ERROR CARGA MAESTROS] {error_carga}")
         finally:
             self.view.btn_actualizar_maestros.setEnabled(True)
             self.view.btn_actualizar_maestros.setText("🔄  Actualizar maestros")

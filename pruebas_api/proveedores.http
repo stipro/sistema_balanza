@@ -1,0 +1,8 @@
+### Prueba de endpoint de proveedores con REST Client
+@baseUrl = http://localhost:8848/Bee-Framework/api
+@privateKey = {{privateKey}}
+
+### CONSULTAR PROVEEDORES
+GET {{baseUrl}}/proveedores HTTP/1.1
+Accept: application/json
+Authorization: Bearer {{privateKey}}
