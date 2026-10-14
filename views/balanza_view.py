@@ -73,6 +73,19 @@ ESTADOS_OPERACION = {
     "error": ("● ERROR", "#fef2f2", "#b91c1c", "#fecaca"),
 }
 
+# CATÁLOGO LOCAL DE PRODUCTOS
+# No depende de la API del sistema comercial.
+PRODUCTOS = [
+    ("228", "MINERAL AURIFERO SULFURADO"),
+    ("229", "MINERAL AURIFERO OXIDADO"),
+    ("234", "MINERAL GRUESO"),
+    ("235", "MINERAL MOLIDO"),
+    ("202", "MINERAL"),
+    ("209", "MINERAL AURIFERO"),
+    ("222", "MINERAL OXIDADO"),
+    ("223", "MINERAL SULFURADO"),
+]
+
 
 # VISTA PRINCIPAL
 class BalanzaView(QMainWindow):
@@ -522,6 +535,26 @@ class BalanzaView(QMainWindow):
         self.txt_procedencia = self._campo()
         self.txt_producto = self._campo()
 
+        # Autocompletado de productos desde el catálogo local.
+        opciones_productos = [
+            f"{codigo} - {nombre}"
+            for codigo, nombre in PRODUCTOS
+        ]
+
+        modelo_productos = QStringListModel(opciones_productos, self)
+
+        self.completer_producto = QCompleter(modelo_productos, self)
+        self.completer_producto.setCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
+        self.completer_producto.setFilterMode(
+            Qt.MatchFlag.MatchContains
+        )
+        self.completer_producto.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion
+        )
+
+        self.txt_producto.setCompleter(self.completer_producto)
         self.txt_sacos = QSpinBox()
 
         self.txt_sacos.setMinimum(0)
