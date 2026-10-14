@@ -110,6 +110,10 @@ class BalanzaController:
         self.view.btn_imprimir.clicked.connect(self.imprimir_lote)
         self.view.btn_modificar.clicked.connect(self.modificar_lote_seleccionado)
         self.view.btn_pendientes.clicked.connect(self.mostrar_pesajes)
+        # Al seleccionar un lote, cargar sus datos comerciales en el formulario.
+        self.view.tabla_pesajes.itemSelectionChanged.connect(
+            self.cargar_lote_seleccionado
+        )
 
         # Configuración de lotes
         self.view.configuracion_lotes.btn_guardar.clicked.connect(
@@ -653,6 +657,39 @@ class BalanzaController:
         except Exception as e:
 
             self.log(f"[ERROR] No se pudieron verificar " f"los pendientes: {e}")
+
+    def cargar_lote_seleccionado(self):
+        """Muestra en el formulario los datos del lote seleccionado.
+
+        La selección solo consulta/carga datos; guardar cambios sigue siendo
+        responsabilidad del botón MODIFICAR y de PesajeService.
+        """
+        if not self.ingreso_actual:
+            return
+
+        lote_texto = self.view.obtener_fila_lote_seleccionada()
+        if not lote_texto:
+            return
+
+        id_lote = self._mapa_lotes.get(lote_texto)
+        if not id_lote:
+            return
+
+        try:
+            lote = PesajeLoteModel.detalle_por_id(id_lote)
+            if not lote:
+                return
+
+            # No recargar el mismo lote repetidamente si el cambio de selección
+            # fue provocado por un refresco de la tabla.
+            self.view.cargar_datos_lote(lote)
+
+            # Si no estamos en edición, el botón conserva su función de entrar
+            # al modo de modificación para el lote seleccionado.
+            if self._lote_en_edicion != id_lote:
+                self.view.btn_modificar.setText("✎  MODIFICAR")
+        except Exception as e:
+            self.log(f"[ERROR] No se pudieron cargar los datos del lote {lote_texto}: {e}")
 
     def modificar_lote_seleccionado(self):
         """Carga y guarda datos comerciales del lote seleccionado.
