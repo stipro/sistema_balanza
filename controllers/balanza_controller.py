@@ -11,6 +11,7 @@ from utils.parser_peso import ParserPeso
 from models.base import ReglaNegocioError
 from services.api_conductores_service import ApiConductoresService
 from services.api_proveedores_service import ApiProveedoresService
+from services.api_transportistas_service import ApiTransportistasService
 from models.maestros import (
     VehiculoModel,
     CarretaModel,
@@ -165,8 +166,10 @@ class BalanzaController:
 
     def actualizar_maestros(self):
         """
-        Sincroniza conductores y proveedores desde la API comercial.
+        Sincroniza conductores, proveedores y transportistas desde la API comercial.
         Después recarga todos los maestros desde SQLite.
+
+        Los modelos conservan sus IDs locales para no afectar pesajes históricos.
         """
         try:
             self.view.btn_actualizar_maestros.setEnabled(False)
@@ -184,7 +187,13 @@ class BalanzaController:
                 registros_proveedores
             )
 
-            # 3. Recargar todos los maestros desde SQLite.
+            # 3. Sincronizar transportistas.
+            registros_transportistas = ApiTransportistasService.obtener_transportistas()
+            resultado_transportistas = TransportistaModel.sincronizar_desde_api(
+                registros_transportistas
+            )
+
+            # 4. Recargar todos los maestros desde SQLite.
             self.cargar_maestros()
 
             self.log(
@@ -198,6 +207,11 @@ class BalanzaController:
                 f"{resultado_proveedores['insertados']} nuevos, "
                 f"{resultado_proveedores['actualizados']} actualizados."
             )
+            self.log(
+                "[OK] Transportistas: "
+                f"{resultado_transportistas['insertados']} nuevos, "
+                f"{resultado_transportistas['actualizados']} actualizados."
+            )
 
             QMessageBox.information(
                 self.view,
@@ -210,6 +224,9 @@ class BalanzaController:
                 "PROVEEDORES\n"
                 f"Nuevos: {resultado_proveedores['insertados']}\n"
                 f"Actualizados: {resultado_proveedores['actualizados']}\n\n"
+                "TRANSPORTISTAS\n"
+                f"Nuevos: {resultado_transportistas['insertados']}\n"
+                f"Actualizados: {resultado_transportistas['actualizados']}\n\n"
                 "Los demás maestros se recargaron desde SQLite."
             )
 
@@ -218,8 +235,8 @@ class BalanzaController:
             QMessageBox.warning(
                 self.view,
                 "Actualizar maestros",
-                "No se pudo completar la sincronización de maestros.\\n\\n"
-                f"{e}\\n\\n"
+                "No se pudo completar la sincronización de maestros.\n\n"
+                f"{e}\n\n"
                 "Los datos locales existentes se conservaron."
             )
             # Aunque una API falle, mostrar los datos que ya están en SQLite.

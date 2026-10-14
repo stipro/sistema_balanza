@@ -235,6 +235,81 @@ class TransportistaModel(MaestroModelo):
     campos_vista = ("nombre", "ruc")
     campo_orden = "nombre"
 
+    @classmethod
+    def sincronizar_desde_api(cls, registros):
+        """
+        Sincroniza transportistas activos devueltos por GET /api/transportistas.
+
+        El ID remoto se guarda en id_externo. Se conserva el PK local para
+        mantener intactas las referencias de los pesajes históricos.
+        Los ausentes no se desactivan porque la API entrega solo activos.
+        """
+        if not isinstance(registros, list):
+            raise ValueError("La API no devolvió una lista de transportistas.")
+
+        insertados = 0
+        actualizados = 0
+
+        with transaccion() as cx:
+            for registro in registros:
+                if not isinstance(registro, dict):
+                    raise ValueError(
+                        "La API devolvió un transportista con formato inválido."
+                    )
+
+                id_remoto = registro.get("id_transportista")
+                ruc = str(registro.get("ruc_transportista") or "").strip()
+                nombre = str(registro.get("nombre_transportista") or "").strip()
+
+                if id_remoto is None or not ruc or not nombre:
+                    raise ValueError(
+                        "Un transportista de la API no contiene "
+                        "id_transportista, RUC o nombre válido."
+                    )
+
+                id_externo = str(id_remoto)
+
+                existente = cx.execute(
+                    f"SELECT {cls.pk}, nombre, ruc, activo, id_externo "
+                    f"FROM {cls.tabla} WHERE id_externo = ?",
+                    (id_externo,),
+                ).fetchone()
+
+                # Vincular registros locales previos por RUC para evitar duplicados.
+                if existente is None:
+                    existente = cx.execute(
+                        f"SELECT {cls.pk}, nombre, ruc, activo, id_externo "
+                        f"FROM {cls.tabla} WHERE ruc = ?",
+                        (ruc,),
+                    ).fetchone()
+
+                datos = {
+                    "nombre": nombre,
+                    "ruc": ruc,
+                    "id_externo": id_externo,
+                    "activo": 1,
+                }
+
+                if existente:
+                    cambio = (
+                        existente["nombre"] != nombre
+                        or existente["ruc"] != ruc
+                        or existente["activo"] != 1
+                        or existente["id_externo"] != id_externo
+                    )
+                    if cambio:
+                        cls.update_by_id(existente[cls.pk], datos, cx)
+                        actualizados += 1
+                else:
+                    cls.add(datos, cx)
+                    insertados += 1
+
+        return {
+            "insertados": insertados,
+            "actualizados": actualizados,
+            "desactivados": 0,
+        }
+
 
 class ConcesionModel(MaestroModelo):
     tabla = "concesiones"
