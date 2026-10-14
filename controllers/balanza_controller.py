@@ -9,6 +9,7 @@ from services.serial_display import SerialDisplay
 from utils.parser_peso import ParserPeso
 
 from models.base import ReglaNegocioError
+from services.api_conductores_service import ApiConductoresService
 from models.maestros import (
     VehiculoModel,
     CarretaModel,
@@ -163,21 +164,49 @@ class BalanzaController:
 
     def actualizar_maestros(self):
         """
-        Recarga los maestros desde SQLite.
-        """
+        Sincroniza conductores desde la API comercial y después recarga
+        todos los maestros locales en la interfaz.
 
+        Los demás maestros continúan cargándose desde SQLite; sus endpoints
+        se incorporarán cuando estén disponibles.
+        """
         try:
+            self.view.btn_actualizar_maestros.setEnabled(False)
+            self.view.btn_actualizar_maestros.setText("Sincronizando...")
+
+            registros = ApiConductoresService.obtener_conductores()
+            resultado = ConductorModel.sincronizar_desde_api(registros)
+
             self.cargar_maestros()
-            self.log("[OK] Maestros recargados desde SQLite.")
+            self.log(
+                "[OK] Conductores sincronizados desde API: "
+                f"{resultado['insertados']} nuevos, "
+                f"{resultado['actualizados']} actualizados, "
+                f"{resultado['desactivados']} desactivados."
+            )
+
+            QMessageBox.information(
+                self.view,
+                "Actualizar maestros",
+                "Sincronización de conductores completada.\n\n"
+                f"Nuevos: {resultado['insertados']}\n"
+                f"Actualizados: {resultado['actualizados']}\n"
+                f"Desactivados: {resultado['desactivados']}\n\n"
+                "Los demás maestros se recargaron desde SQLite."
+            )
 
         except Exception as e:
             self.log(f"[ERROR MAESTROS] {e}")
-
             QMessageBox.warning(
                 self.view,
                 "Actualizar maestros",
-                f"No se pudieron actualizar los maestros.\n\n{e}",
+                "No se pudieron sincronizar los conductores.\n\n"
+                f"{e}\n\n"
+                "Los datos locales existentes se conservaron."
             )
+        finally:
+            self.view.btn_actualizar_maestros.setEnabled(True)
+            self.view.btn_actualizar_maestros.setText("🔄  Actualizar maestros")
 
     # ==================================================================
     # CONFIGURACIÓN DE LOTES

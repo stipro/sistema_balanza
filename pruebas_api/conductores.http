@@ -1,0 +1,9 @@
+### Prueba de endpoint de conductores con REST Client
+### Define BALANZA_API_TOKEN en el entorno de VS Code/REST Client o reemplaza {{privateKey}}.
+@baseUrl = http://localhost:8848/Bee-Framework/api
+@privateKey = {{privateKey}}
+
+### CONSULTAR CONDUCTORES
+GET {{baseUrl}}/conductores HTTP/1.1
+Accept: application/json
+Authorization: Bearer {{privateKey}}
