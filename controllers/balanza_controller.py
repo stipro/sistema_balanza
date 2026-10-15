@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, QSettings
 from PyQt6.QtWidgets import QMessageBox
 
 import serial
@@ -124,8 +124,47 @@ class BalanzaController:
             self.guardar_configuracion_lotes
         )
 
-        # Configuración serial
-        self.view.configuracion.btn_actualizar.clicked.connect(self.detectar_puertos)
+        # CONFIGURACIÓN SERIAL PERSISTENTE
+
+        self.config_serial = QSettings("MineraMH", "SistemaBalanza")
+
+        # Recuperar velocidades guardadas.
+        self.view.configuracion.spin_baudrate_balanza.setValue(
+            self.config_serial.value(
+                "serial/baudrate_balanza",
+                BAUDRATE_BALANZA_DEFAULT,
+                type=int,
+            )
+        )
+
+        self.view.configuracion.spin_baudrate_display.setValue(
+            self.config_serial.value(
+                "serial/baudrate_display",
+                BAUDRATE_DISPLAY_DEFAULT,
+                type=int,
+            )
+        )
+
+        # Guardar automáticamente cuando cambie una selección.
+        self.view.configuracion.cmb_balanza.currentIndexChanged.connect(
+            self.guardar_configuracion_serial
+        )
+
+        self.view.configuracion.cmb_display.currentIndexChanged.connect(
+            self.guardar_configuracion_serial
+        )
+
+        self.view.configuracion.spin_baudrate_balanza.valueChanged.connect(
+            self.guardar_configuracion_serial
+        )
+
+        self.view.configuracion.spin_baudrate_display.valueChanged.connect(
+            self.guardar_configuracion_serial
+        )
+
+        self.view.configuracion.btn_actualizar.clicked.connect(
+            self.detectar_puertos
+        )
 
         self.view.act_configuracion.triggered.connect(self.view.mostrar_configuracion)
 
@@ -952,64 +991,108 @@ class BalanzaController:
 
         self.view.cargar_pesajes(filas)
 
+    def guardar_configuracion_serial(self, *_args):
+        """Guarda los puertos y las velocidades para próximas sesiones."""
+
+        if not hasattr(self, "config_serial"):
+            return
+
+        config = self.view.configuracion
+
+        puerto_balanza = config.cmb_balanza.currentData()
+        puerto_display = config.cmb_display.currentData()
+
+        if puerto_balanza:
+            self.config_serial.setValue(
+                "serial/puerto_balanza",
+                puerto_balanza,
+            )
+
+        if puerto_display:
+            self.config_serial.setValue(
+                "serial/puerto_display",
+                puerto_display,
+            )
+
+        self.config_serial.setValue(
+            "serial/baudrate_balanza",
+            config.spin_baudrate_balanza.value(),
+        )
+
+        self.config_serial.setValue(
+            "serial/baudrate_display",
+            config.spin_baudrate_display.value(),
+        )
+
+        self.config_serial.sync()
+
     # ==================================================================
     # SERIAL - DETECTAR PUERTOS
     # ==================================================================
 
     def detectar_puertos(self):
-        """
-        Detecta los puertos COM disponibles y los coloca
-        en los combos de balanza y display.
-        """
+        """Detecta los puertos disponibles y restaura la selección guardada."""
 
-        # Mientras esperamos comunicación no se deben modificar
-        # los puertos seleccionados.
-        if self.esperando_balanza:
+        if self.esperando_balanza or self.balanza_comunicando:
             return
 
-        # Mientras está funcionando tampoco.
-        if self.balanza_comunicando:
-            return
+        cmb_balanza = self.view.configuracion.cmb_balanza
+        cmb_display = self.view.configuracion.cmb_display
 
-        self.view.configuracion.cmb_balanza.clear()
-        self.view.configuracion.cmb_display.clear()
+        # Evitar que las modificaciones temporales disparen el guardado.
+        cmb_balanza.blockSignals(True)
+        cmb_display.blockSignals(True)
 
         try:
+            cmb_balanza.clear()
+            cmb_display.clear()
 
             puertos = serial.tools.list_ports.comports()
 
             for puerto in puertos:
-
                 descripcion = puerto.description or "Sin descripción"
+                texto = f"{puerto.device} - {descripcion}"
 
-                texto = f"{puerto.device} - " f"{descripcion}"
+                cmb_balanza.addItem(texto, puerto.device)
+                cmb_display.addItem(texto, puerto.device)
 
-                self.view.configuracion.cmb_balanza.addItem(
-                    texto,
-                    puerto.device,
-                )
-
-                self.view.configuracion.cmb_display.addItem(
-                    texto,
-                    puerto.device,
-                )
-
-            # Seleccionar puertos configurados por defecto.
-            self.seleccionar_puerto(
-                self.view.configuracion.cmb_balanza,
+            # Recuperar puertos guardados o usar los valores predeterminados.
+            puerto_balanza = self.config_serial.value(
+                "serial/puerto_balanza",
                 PUERTO_BALANZA_DEFAULT,
+                type=str,
             )
 
-            self.seleccionar_puerto(
-                self.view.configuracion.cmb_display,
+            puerto_display = self.config_serial.value(
+                "serial/puerto_display",
                 PUERTO_DISPLAY_DEFAULT,
+                type=str,
             )
 
-            self.log("[INFO] Puertos actualizados.")
+            # Si un puerto no está conectado, mantenerlo visible.
+            for combo, guardado in (
+                (cmb_balanza, puerto_balanza),
+                (cmb_display, puerto_display),
+            ):
+                if guardado and combo.findData(guardado) == -1:
+                    combo.addItem(
+                        f"{guardado} - (no disponible)",
+                        guardado,
+                    )
+
+                if guardado:
+                    self.seleccionar_puerto(combo, guardado)
+
+            self.log("[INFO] Puertos detectados; configuración restaurada.")
 
         except Exception as e:
-
             self.log(f"[ERROR PUERTOS] {e}")
+
+        finally:
+            cmb_balanza.blockSignals(False)
+            cmb_display.blockSignals(False)
+
+        self.guardar_configuracion_serial()
 
     def seleccionar_puerto(
         self,
