@@ -120,6 +120,7 @@ DDL_LOTES = """
         guia_proveedor TEXT,
         guia_transportista TEXT,
         id_concesion INTEGER,
+        producto TEXT,
         procedencia TEXT,
         observacion TEXT,
         tipo_carga TEXT NOT NULL CHECK (tipo_carga IN ('SACO', 'GRANEL')),
