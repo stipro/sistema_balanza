@@ -40,6 +40,87 @@ class VehiculoModel(MaestroModelo):
     campos_vista = ("placa",)
     campo_orden = "placa"
 
+    @classmethod
+    def sincronizar_desde_api(cls, registros):
+        """
+        Sincroniza solo CAMION y TRACTO desde GET /api/vehiculos.
+        Las CARRETA se sincronizan mediante CarretaModel.
+        Conserva el ID local y guarda el ID remoto en id_externo.
+        """
+        if not isinstance(registros, list):
+            raise ValueError("La API no devolvió una lista de vehículos.")
+
+        insertados = 0
+        actualizados = 0
+        desactivados = 0
+
+        with transaccion() as cx:
+            for registro in registros:
+                if not isinstance(registro, dict):
+                    raise ValueError("La API devolvió un vehículo con formato inválido.")
+
+                tipo = str(registro.get("tipo_vehiculo") or "").strip().upper()
+                if tipo == "CARRETA":
+                    # Si una versión anterior del programa guardó esta carreta
+                    # en vehiculos, desactivarla sin borrarla ni cambiar su PK.
+                    id_remoto_carreta = registro.get("id_vehiculo")
+                    placa_carreta = str(registro.get("placa") or "").strip().upper()
+                    fila_carreta = None
+                    if id_remoto_carreta is not None:
+                        fila_carreta = cx.execute(
+                            f"SELECT {cls.pk}, activo FROM {cls.tabla} WHERE id_externo = ?",
+                            (str(id_remoto_carreta),),
+                        ).fetchone()
+                    if fila_carreta is None and placa_carreta:
+                        fila_carreta = cx.execute(
+                            f"SELECT {cls.pk}, activo FROM {cls.tabla} WHERE placa = ?",
+                            (placa_carreta,),
+                        ).fetchone()
+                    if fila_carreta and fila_carreta["activo"] != 0:
+                        cls.update_by_id(fila_carreta[cls.pk], {"activo": 0}, cx)
+                        desactivados += 1
+                    continue
+                if tipo not in ("CAMION", "TRACTO"):
+                    raise ValueError(
+                        f"Tipo de vehículo inválido para la placa "
+                        f"{registro.get('placa') or '(sin placa)'}: {tipo or '(vacío)'}."
+                    )
+
+                id_remoto = registro.get("id_vehiculo")
+                placa = str(registro.get("placa") or "").strip().upper()
+                if id_remoto is None or not placa:
+                    raise ValueError("Un vehículo no contiene un ID o una placa válida.")
+
+                id_externo = str(id_remoto)
+                existente = cx.execute(
+                    f"SELECT {cls.pk}, placa, id_externo, activo "
+                    f"FROM {cls.tabla} WHERE id_externo = ?",
+                    (id_externo,),
+                ).fetchone()
+
+                if existente is None:
+                    existente = cx.execute(
+                        f"SELECT {cls.pk}, placa, id_externo, activo "
+                        f"FROM {cls.tabla} WHERE placa = ?",
+                        (placa,),
+                    ).fetchone()
+
+                datos = {"placa": placa, "id_externo": id_externo, "activo": 1}
+                if existente:
+                    cambio = any(existente[campo] != valor for campo, valor in datos.items())
+                    if cambio:
+                        cls.update_by_id(existente[cls.pk], datos, cx)
+                        actualizados += 1
+                else:
+                    cls.add(datos, cx)
+                    insertados += 1
+
+        return {
+            "insertados": insertados,
+            "actualizados": actualizados,
+            "desactivados": desactivados,
+        }
+
 
 class CarretaModel(MaestroModelo):
     tabla = "carretas"
@@ -47,6 +128,62 @@ class CarretaModel(MaestroModelo):
     columnas = ("placa", "id_externo", "activo")
     campos_vista = ("placa",)
     campo_orden = "placa"
+
+    @classmethod
+    def sincronizar_desde_api(cls, registros):
+        """
+        Sincroniza únicamente los registros CARRETA del catálogo comercial.
+        Conserva el ID local y guarda el ID de MySQL en id_externo.
+        """
+        if not isinstance(registros, list):
+            raise ValueError("La API no devolvió una lista de vehículos.")
+
+        insertados = 0
+        actualizados = 0
+
+        with transaccion() as cx:
+            for registro in registros:
+                if not isinstance(registro, dict):
+                    raise ValueError("La API devolvió un vehículo con formato inválido.")
+
+                tipo = str(registro.get("tipo_vehiculo") or "").strip().upper()
+                if tipo != "CARRETA":
+                    continue
+
+                id_remoto = registro.get("id_vehiculo")
+                placa = str(registro.get("placa") or "").strip().upper()
+                if id_remoto is None or not placa:
+                    raise ValueError("Una carreta no contiene un ID o una placa válida.")
+
+                id_externo = str(id_remoto)
+                existente = cx.execute(
+                    f"SELECT {cls.pk}, placa, id_externo, activo "
+                    f"FROM {cls.tabla} WHERE id_externo = ?",
+                    (id_externo,),
+                ).fetchone()
+
+                if existente is None:
+                    existente = cx.execute(
+                        f"SELECT {cls.pk}, placa, id_externo, activo "
+                        f"FROM {cls.tabla} WHERE placa = ?",
+                        (placa,),
+                    ).fetchone()
+
+                datos = {"placa": placa, "id_externo": id_externo, "activo": 1}
+                if existente:
+                    cambio = any(existente[campo] != valor for campo, valor in datos.items())
+                    if cambio:
+                        cls.update_by_id(existente[cls.pk], datos, cx)
+                        actualizados += 1
+                else:
+                    cls.add(datos, cx)
+                    insertados += 1
+
+        return {
+            "insertados": insertados,
+            "actualizados": actualizados,
+            "desactivados": 0,
+        }
 
 
 class ConductorModel(MaestroModelo):

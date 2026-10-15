@@ -13,6 +13,7 @@ from services.api_conductores_service import ApiConductoresService
 from services.api_proveedores_service import ApiProveedoresService
 from services.api_transportistas_service import ApiTransportistasService
 from services.api_concesiones_service import ApiConcesionesService
+from services.api_vehiculos_service import ApiVehiculosService
 from models.maestros import (
     VehiculoModel,
     CarretaModel,
@@ -215,33 +216,52 @@ class BalanzaController:
             self.view.btn_actualizar_maestros.setEnabled(False)
             self.view.btn_actualizar_maestros.setText("Sincronizando...")
 
-            # 1. Sincronizar conductores.
+            # 1. Consultar una sola vez el catálogo comercial y separar por tipo.
+            registros_vehiculos = ApiVehiculosService.obtener_vehiculos()
+            resultado_vehiculos = VehiculoModel.sincronizar_desde_api(
+                registros_vehiculos
+            )
+            resultado_carretas = CarretaModel.sincronizar_desde_api(
+                registros_vehiculos
+            )
+
+            # 2. Sincronizar conductores.
             registros_conductores = ApiConductoresService.obtener_conductores()
             resultado_conductores = ConductorModel.sincronizar_desde_api(
                 registros_conductores
             )
 
-            # 2. Sincronizar proveedores.
+            # 3. Sincronizar proveedores.
             registros_proveedores = ApiProveedoresService.obtener_proveedores()
             resultado_proveedores = ProveedorModel.sincronizar_desde_api(
                 registros_proveedores
             )
 
-            # 3. Sincronizar transportistas.
+            # 4. Sincronizar transportistas.
             registros_transportistas = ApiTransportistasService.obtener_transportistas()
             resultado_transportistas = TransportistaModel.sincronizar_desde_api(
                 registros_transportistas
             )
 
-            # 4. Sincronizar concesiones.
+            # 5. Sincronizar concesiones.
             registros_concesiones = ApiConcesionesService.obtener_concesiones()
             resultado_concesiones = ConcesionModel.sincronizar_desde_api(
                 registros_concesiones
             )
 
-            # 5. Recargar todos los maestros desde SQLite.
+            # 6. Recargar todos los maestros desde SQLite.
             self.cargar_maestros()
 
+            self.log(
+                "[OK] Vehículos: "
+                f"{resultado_vehiculos['insertados']} nuevos, "
+                f"{resultado_vehiculos['actualizados']} actualizados."
+            )
+            self.log(
+                "[OK] Carretas: "
+                f"{resultado_carretas['insertados']} nuevas, "
+                f"{resultado_carretas['actualizados']} actualizadas."
+            )
             self.log(
                 "[OK] Conductores: "
                 f"{resultado_conductores['insertados']} nuevos, "
@@ -268,6 +288,12 @@ class BalanzaController:
                 self.view,
                 "Actualizar maestros",
                 "Sincronización completada.\n\n"
+                "CARRETAS (solo tipo CARRETA)\n"
+                f"Nuevas: {resultado_carretas['insertados']}\n"
+                f"Actualizadas: {resultado_carretas['actualizados']}\n\n"
+                "VEHÍCULOS (CAMION y TRACTO)\n"
+                f"Nuevos: {resultado_vehiculos['insertados']}\n"
+                f"Actualizados: {resultado_vehiculos['actualizados']}\n\n"
                 "CONDUCTORES\n"
                 f"Nuevos: {resultado_conductores['insertados']}\n"
                 f"Actualizados: {resultado_conductores['actualizados']}\n"
