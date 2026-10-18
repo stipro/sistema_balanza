@@ -6,7 +6,7 @@ from database.conexion import obtener_conexion, transaccion
 
 # Súbelo cuando cambies el esquema. Si la BD existente tiene otra versión,
 # inicializar_base_datos() avisa en lugar de dejar tablas viejas a medias.
-VERSION_ESQUEMA = 3
+VERSION_ESQUEMA = 4
 
 _AHORA_SQL = "strftime('%Y-%m-%dT%H:%M:%S','now','localtime')"
 
@@ -148,6 +148,18 @@ DDL_LOTES = """
             REFERENCES pesajes_registros(id_registro)
     )"""
 
+DDL_HISTORIAL_ELIMINACIONES = """
+    CREATE TABLE IF NOT EXISTS historial_eliminaciones (
+        id_historial INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo_entidad TEXT NOT NULL CHECK (tipo_entidad IN ('LOTE', 'TICKET')),
+        id_entidad_original INTEGER NOT NULL,
+        ticket INTEGER,
+        lote TEXT,
+        motivo TEXT NOT NULL,
+        datos_json TEXT NOT NULL,
+        eliminado_en TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+    )"""
+
 INDICES = [
     "CREATE INDEX IF NOT EXISTS ix_pesajes_estado ON pesajes(estado)",
     """CREATE INDEX IF NOT EXISTS ix_pesajes_sync
@@ -268,6 +280,7 @@ def inicializar_base_datos():
         conexion.execute(DDL_PESAJES)
         conexion.execute(DDL_REGISTROS)
         conexion.execute(DDL_LOTES)
+        conexion.execute(DDL_HISTORIAL_ELIMINACIONES)
 
         for sentencia in INDICES + TRIGGERS:
             conexion.execute(sentencia)

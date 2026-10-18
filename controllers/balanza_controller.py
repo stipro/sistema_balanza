@@ -114,6 +114,8 @@ class BalanzaController:
         self.view.btn_guardar.clicked.connect(self.guardar_ingreso)
         self.view.btn_imprimir.clicked.connect(self.imprimir_lote)
         self.view.btn_modificar.clicked.connect(self.modificar_lote_seleccionado)
+        self.view.btn_eliminar_lote.clicked.connect(self.eliminar_lote_seleccionado)
+        self.view.btn_eliminar_ticket.clicked.connect(self.eliminar_ticket_actual)
         self.view.btn_pendientes.clicked.connect(self.mostrar_pesajes)
         # Al seleccionar un lote, cargar sus datos comerciales en el formulario.
         self.view.tabla_pesajes.itemSelectionChanged.connect(
@@ -470,31 +472,17 @@ class BalanzaController:
             )
 
     def _limpiar_ingreso_vacio(self):
+        """Cierra el contexto visual; nunca elimina un ticket automáticamente.
+
+        La eliminación de tickets es explícita mediante ELIMINAR TICKET.
         """
-        Elimina únicamente el ingreso actual si todavía está vacío.
-
-        Si ya tiene lotes/capturas, PesajeModel no permitirá eliminarlo
-        y quedará como ingreso pendiente.
-        """
-
-        if not self.ingreso_actual:
-            return
-
-        try:
-
-            PesajeModel.delete_by_id(self.ingreso_actual["id_pesaje"])
-
+        if self.ingreso_actual:
             self.log(
-                f"[INFO] Ticket " f"{self.ingreso_actual['ticket']} vacío eliminado."
+                f"[INFO] Se cerró la vista del ticket "
+                f"{self.ingreso_actual['ticket']}; no se eliminó automáticamente."
             )
-
-        except ReglaNegocioError:
-
-            # Tenía información asociada.
-            # Debe conservarse como pendiente.
-            pass
-
         self.ingreso_actual = None
+        self.ultimo_peso = None
 
     def _sincronizar_datos_generales(self):
         """
@@ -806,12 +794,103 @@ class BalanzaController:
 
             self.log(f"[ERROR] No se pudieron verificar " f"los pendientes: {e}")
 
+    def eliminar_lote_seleccionado(self):
+        """Elimina solo el lote seleccionado si la cadena lo permite."""
+        if not self.ingreso_actual:
+            QMessageBox.information(self.view, "Eliminar lote", "Primero abra un ticket.")
+            return
+        lote_texto = self.view.obtener_fila_lote_seleccionada()
+        if not lote_texto or lote_texto not in self._mapa_lotes:
+            QMessageBox.information(self.view, "Eliminar lote", "Seleccione un lote en la tabla.")
+            return
+        id_lote = self._mapa_lotes[lote_texto]
+        respuesta = QMessageBox.question(
+            self.view,
+            "Confirmar eliminación",
+            f"¿Eliminar el lote {lote_texto} del ticket {self.ingreso_actual['ticket']}?\n\n"
+            "Se guardará una copia en el historial. Esta acción no se puede deshacer desde la pantalla operativa.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if respuesta != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            resultado = PesajeService.eliminar_lote(id_lote)
+            self._lote_en_edicion = None
+            self.view.btn_modificar.setText("✎  MODIFICAR")
+            # Actualizar la tabla después de eliminar el lote.
+            self._refrescar_lotes()
+            # Limpiar los campos correspondientes al lote eliminado.
+            self.view.limpiar_campos_lote()
+            # Mostrar el correlativo disponible.
+            self.view.mostrar_proximo_lote(ConfiguracionLotesModel.proximo_lote())
+            # El ticket sigue activo: volver a habilitar el formulario.
+            self.view.aplicar_modo_ingreso("EN_PROCESO")
+            mensaje = f"El lote {resultado['lote']} fue eliminado y archivado en el historial."
+            if resultado.get("correlativo_recuperado"):
+                mensaje += "\nSe recuperó el último correlativo disponible."
+            QMessageBox.information(self.view, "Lote eliminado", mensaje)
+            self.log(f"[ELIMINAR LOTE] {resultado['lote']} del ticket {resultado['ticket']} archivado en historial.")
+        except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "No se puede eliminar el lote", str(e))
+        except Exception as e:
+            QMessageBox.critical(self.view, "Error al eliminar lote", f"No se pudo eliminar el lote.\n\n{e}")
+
+    def eliminar_ticket_actual(self):
+        """Elimina explícitamente el ticket actual, únicamente si está vacío."""
+        if not self.ingreso_actual:
+            QMessageBox.information(self.view, "Eliminar ticket", "No hay un ticket activo.")
+            return
+        ticket = self.ingreso_actual["ticket"]
+        respuesta = QMessageBox.question(
+            self.view,
+            "Confirmar eliminación de ticket",
+            f"¿Eliminar el ticket vacío {ticket}?\n\nSolo se permite si no tiene lotes ni capturas.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if respuesta != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            ticket_eliminado = PesajeService.eliminar_ticket_vacio(self.ingreso_actual["id_pesaje"])
+            self.ingreso_actual = None
+            self.ultimo_peso = None
+            self._mapa_lotes = {}
+            self._lote_en_edicion = None
+            self.view.cargar_pesajes([])
+            self.view.estado_operacion("sin_operacion")
+            self.view.bloquear_formulario(True)
+            self.view.mostrar_ticket("")
+            QMessageBox.information(self.view, "Ticket eliminado", f"El ticket {ticket_eliminado} fue eliminado y registrado en el historial.")
+            self.log(f"[ELIMINAR TICKET] Ticket {ticket_eliminado} vacío eliminado.")
+        except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "No se puede eliminar el ticket", str(e))
+        except Exception as e:
+            QMessageBox.critical(self.view, "Error al eliminar ticket", f"No se pudo eliminar el ticket.\n\n{e}")
+
     def cargar_lote_seleccionado(self):
         """Muestra en el formulario los datos del lote seleccionado.
 
         La selección solo consulta/carga datos; guardar cambios sigue siendo
         responsabilidad del botón MODIFICAR y de PesajeService.
         """
+
+        """Carga el lote seleccionado o limpia su selección visual."""
+        lote_texto = self.view.obtener_fila_lote_seleccionada()
+
+        if not lote_texto:
+            self._lote_en_edicion = None
+            self.view.btn_modificar.setText("✎  MODIFICAR")
+
+            if self.ingreso_actual:
+                self.view.limpiar_campos_lote()
+                self.view.mostrar_proximo_lote(
+                    ConfiguracionLotesModel.proximo_lote()
+                )
+                self.view.aplicar_modo_ingreso("EN_PROCESO")
+
+            return
+    
         if not self.ingreso_actual:
             return
 
@@ -990,6 +1069,23 @@ class BalanzaController:
         self._refrescar_lotes()
 
         self.log(f"[CONTINUAR] Ticket " f"{ingreso['ticket']} recuperado.")
+
+    def limpiar_seleccion_lote(self):
+        """Quita la selección y permite continuar agregando lotes."""
+        self._lote_en_edicion = None
+
+        # Restablecer el botón de modificación.
+        self.view.btn_modificar.setText("✎  MODIFICAR")
+
+        # Quitar la selección de la tabla.
+        self.view.tabla_pesajes.clearSelection()
+        self.view.tabla_pesajes.setCurrentItem(None)
+
+        # Limpiar los campos propios del lote.
+        self.view.limpiar_campos_lote()
+
+        # Habilitar nuevamente el formulario para ingresar otro lote.
+        self.view.aplicar_modo_ingreso("EN_PROCESO")
 
     # ==================================================================
     # REFRESCAR TABLA

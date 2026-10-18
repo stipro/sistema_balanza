@@ -10,6 +10,8 @@ Cadena de pesadas (N lotes = N+1 capturas):
 """
 
 import math
+import json
+import re
 
 from database.conexion import transaccion
 from models.base import ReglaNegocioError
@@ -188,6 +190,139 @@ class PesajeService:
 
             cls._ingreso_abierto(lote["id_pesaje"], cx)
             PesajeLoteModel.anular(id_lote, motivo, cx)
+
+    # ELIMINACIÓN CON HISTORIAL
+    @classmethod
+    def eliminar_lote(cls, id_lote, motivo="Eliminación solicitada por el usuario"):
+        """Elimina un lote operativo, conserva snapshot y respeta la cadena.
+
+        Regla de la cadena: no se permite eliminar un lote cuyo BRUTO sea la
+        TARA de un lote anterior del mismo ticket. En ese caso se debe eliminar
+        primero el lote anterior. Una captura que siga siendo usada como bruto
+        por un lote posterior no se anula.
+        """
+        with transaccion() as cx:
+            lote = cx.execute(
+                "SELECT * FROM pesajes_lotes WHERE id_pesaje_lote = ?",
+                (id_lote,),
+            ).fetchone()
+            if lote is None:
+                raise ReglaNegocioError("El lote seleccionado ya no existe.")
+            lote = dict(lote)
+            ingreso = cx.execute(
+                "SELECT * FROM pesajes WHERE id_pesaje = ?", (lote["id_pesaje"],)
+            ).fetchone()
+            if ingreso is None:
+                raise ReglaNegocioError("No se encontró el ticket del lote.")
+            if ingreso["estado"] == "ANULADO":
+                raise ReglaNegocioError("No se pueden eliminar lotes de un ticket anulado.")
+
+            # Si el bruto del lote seleccionado se usó como tara de otro lote,
+            # el lote anterior debe retirarse primero.
+            bloqueador = None
+            if lote.get("id_registro_bruto") is not None:
+                fila = cx.execute(
+                    """SELECT lote FROM pesajes_lotes
+                       WHERE id_pesaje = ?
+                         AND id_pesaje_lote <> ?
+                         AND id_registro_tara = ?
+                         AND estado <> 'ANULADO'
+                       ORDER BY orden LIMIT 1""",
+                    (lote["id_pesaje"], id_lote, lote["id_registro_bruto"]),
+                ).fetchone()
+                if fila:
+                    bloqueador = fila["lote"]
+            if bloqueador:
+                raise ReglaNegocioError(
+                    f"No se puede eliminar el lote {lote['lote']}. "
+                    f"Primero debe eliminar el lote anterior {bloqueador}, "
+                    "porque comparte una captura de pesaje con él."
+                )
+
+            ids_registros = sorted({
+                int(x) for x in (lote.get("id_registro_bruto"), lote.get("id_registro_tara"))
+                if x is not None
+            })
+            registros = []
+            if ids_registros:
+                placeholders = ",".join("?" for _ in ids_registros)
+                registros = [dict(r) for r in cx.execute(
+                    f"SELECT * FROM pesajes_registros WHERE id_registro IN ({placeholders})",
+                    ids_registros,
+                ).fetchall()]
+
+            # El historial contiene el lote y las capturas tal como estaban.
+            snapshot = {"lote": lote, "ticket": dict(ingreso), "capturas": registros}
+            cx.execute(
+                """INSERT INTO historial_eliminaciones
+                   (tipo_entidad, id_entidad_original, ticket, lote, motivo, datos_json)
+                   VALUES ('LOTE', ?, ?, ?, ?, ?)""",
+                (id_lote, ingreso["ticket"], lote["lote"], motivo, json.dumps(snapshot, ensure_ascii=False, default=str)),
+            )
+
+            cx.execute("DELETE FROM pesajes_lotes WHERE id_pesaje_lote = ?", (id_lote,))
+
+            # Una captura se marca anulada solo cuando ya no la referencia ningún lote.
+            for id_registro in ids_registros:
+                usada = cx.execute(
+                    """SELECT 1 FROM pesajes_lotes
+                       WHERE id_registro_bruto = ? OR id_registro_tara = ? LIMIT 1""",
+                    (id_registro, id_registro),
+                ).fetchone()
+                if not usada:
+                    cx.execute(
+                        """UPDATE pesajes_registros
+                           SET anulado = 1, motivo_anulacion = ?
+                           WHERE id_registro = ? AND anulado = 0""",
+                        (f"Captura archivada al eliminar el lote {lote['lote']}", id_registro),
+                    )
+
+            # Recuperar correlativo solo si este lote es el último usado.
+            match = re.search(r"-(\d+)$", str(lote["lote"]))
+            config = ConfiguracionLotesModel.get(cx)
+            if match and config:
+                correlativo = int(match.group(1))
+                todos_lotes = [r[0] for r in cx.execute(
+                    "SELECT lote FROM pesajes_lotes UNION ALL "
+                    "SELECT lote FROM historial_eliminaciones WHERE tipo_entidad = 'LOTE'"
+                ).fetchall() if r[0]]
+                sufijos = []
+                for texto in todos_lotes:
+                    m = re.search(r"-(\d+)$", str(texto))
+                    if m:
+                        sufijos.append(int(m.group(1)))
+                if config["proximo_correlativo"] == correlativo + 1 and max(sufijos or [correlativo]) == correlativo:
+                    cx.execute(
+                        "UPDATE configuracion_lotes SET proximo_correlativo = ?, updated_at = ? WHERE id_configuracion = 1",
+                        (correlativo, __import__("datetime").datetime.now().isoformat(timespec="seconds")),
+                    )
+
+            return {"lote": lote["lote"], "ticket": ingreso["ticket"], "correlativo_recuperado": bool(match and config and config["proximo_correlativo"] == correlativo + 1 and max(sufijos or [correlativo]) == correlativo)}
+
+    @classmethod
+    def eliminar_ticket_vacio(cls, id_pesaje, motivo="Eliminación de ticket vacío"):
+        """Elimina un ticket solo si no tiene lotes ni capturas asociadas."""
+        with transaccion() as cx:
+            ingreso = cx.execute("SELECT * FROM pesajes WHERE id_pesaje = ?", (id_pesaje,)).fetchone()
+            if ingreso is None:
+                raise ReglaNegocioError("El ticket ya no existe.")
+            ticket = dict(ingreso)
+            lotes = cx.execute("SELECT COUNT(*) FROM pesajes_lotes WHERE id_pesaje = ?", (id_pesaje,)).fetchone()[0]
+            capturas = cx.execute("SELECT COUNT(*) FROM pesajes_registros WHERE id_pesaje = ?", (id_pesaje,)).fetchone()[0]
+            if lotes or capturas:
+                raise ReglaNegocioError(
+                    f"No se puede eliminar el ticket {ticket['ticket']}: "
+                    f"todavía tiene {lotes} lote(s) y {capturas} captura(s). "
+                    "El ticket debe estar completamente vacío."
+                )
+            cx.execute(
+                """INSERT INTO historial_eliminaciones
+                   (tipo_entidad, id_entidad_original, ticket, lote, motivo, datos_json)
+                   VALUES ('TICKET', ?, ?, NULL, ?, ?)""",
+                (id_pesaje, ticket["ticket"], motivo, json.dumps({"ticket": ticket}, ensure_ascii=False, default=str)),
+            )
+            cx.execute("DELETE FROM pesajes WHERE id_pesaje = ?", (id_pesaje,))
+            return ticket["ticket"]
 
     # CAPTURAS
     @classmethod

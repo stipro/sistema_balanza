@@ -3,6 +3,7 @@ from PyQt6.QtCore import (
     pyqtSignal,
     QStringListModel,
     QTimer,
+    QEvent
 )
 from PyQt6.QtGui import QAction, QKeySequence, QColor
 from PyQt6.QtWidgets import (
@@ -365,6 +366,8 @@ class BalanzaView(QMainWindow):
         self.btn_guardar = self._boton("💾  GUARDAR", 45, "btn_guardar")
         self.btn_imprimir = self._boton("🖨  IMPRIMIR")
         self.btn_modificar = self._boton("✎  MODIFICAR")
+        self.btn_eliminar_lote = self._boton("🗑  ELIMINAR LOTE")
+        self.btn_eliminar_ticket = self._boton("🗑  ELIMINAR TICKET")
         self.btn_salir = self._boton("🚪  SALIR")
 
         self.btn_salir.clicked.connect(self.close)
@@ -373,6 +376,8 @@ class BalanzaView(QMainWindow):
         acciones.addWidget(self.btn_guardar, 1)
         acciones.addWidget(self.btn_imprimir)
         acciones.addWidget(self.btn_modificar)
+        acciones.addWidget(self.btn_eliminar_lote)
+        acciones.addWidget(self.btn_eliminar_ticket)
         acciones.addStretch()
         acciones.addWidget(self.btn_salir)
 
@@ -732,6 +737,7 @@ class BalanzaView(QMainWindow):
 
         layout.addWidget(self.tabla_pesajes)
 
+        self.configurar_deseleccion_tabla()
         return grupo
 
     # BARRA DE ESTADO
@@ -1564,3 +1570,37 @@ class BalanzaView(QMainWindow):
             return None
 
         return items[0].text().strip() or None
+
+
+    def configurar_deseleccion_tabla(self):
+        """Permite deseleccionar una fila haciendo clic nuevamente en ella
+        o haciendo clic en una zona vacía de la tabla."""
+        self.tabla_pesajes.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if (
+            obj is self.tabla_pesajes.viewport()
+            and event.type() == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            tabla = self.tabla_pesajes
+            indice = tabla.indexAt(event.position().toPoint())
+
+            # Clic en zona vacía, o en la fila ya seleccionada
+            if not indice.isValid() or tabla.selectionModel().isRowSelected(
+                indice.row(), indice.parent()
+            ):
+                tabla.clearSelection()
+                tabla.setCurrentItem(None)
+                return True  # consume el evento
+
+        return super().eventFilter(obj, event)
+
+
+    def _alternar_seleccion_fila(self, fila, columna):
+        """Si se vuelve a pulsar la fila seleccionada, la deselecciona."""
+        seleccionadas = self.tabla_pesajes.selectionModel().selectedRows()
+
+        if seleccionadas and seleccionadas[0].row() == fila:
+            self.tabla_pesajes.clearSelection()
+            self.tabla_pesajes.setCurrentItem(None)
