@@ -1412,6 +1412,30 @@ class BalanzaView(QMainWindow):
             # "priorizar_analisis": self.chk_priorizar.isChecked(),
         }
 
+    def bloquear_campos_comerciales(self, bloquear=True):
+        campos = (
+            self.txt_proveedor,
+            self.txt_ruc_proveedor,
+            self.txt_guia_proveedor,
+            self.txt_guia_transportista,
+            self.txt_concesion,
+            self.txt_codigo,
+            self.txt_procedencia,
+            self.txt_producto,
+            self.txt_observacion,
+            self.cmb_tipo_carga,
+            self.txt_sacos,
+
+            # Datos del chofer y transportista
+            self.txt_chofer,
+            self.txt_brevete,
+            self.txt_transportista,
+            self.txt_ruc_transportista,
+        )
+
+        for campo in campos:
+            campo.setEnabled(not bloquear)
+
     def cargar_datos_lote(self, lote):
         """Carga los datos comerciales de un lote en el formulario."""
         self.txt_lote.setText(str(lote.get("lote") or ""))
@@ -1453,6 +1477,9 @@ class BalanzaView(QMainWindow):
         if self.concesion_seleccionada is None:
             self.txt_concesion.clear()
             self.txt_codigo.clear()
+        # Mostrar los datos del lote en modo consulta.
+        # Para editarlos se debe pulsar MODIFICAR.
+        self.bloquear_campos_comerciales(True)
 
     def limpiar_campos_lote(self):
         """Después de agregar un lote: limpia lo propio del lote,

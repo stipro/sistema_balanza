@@ -873,13 +873,7 @@ class BalanzaController:
             self.view.cargar_datos_lote(lote)
             self._lote_en_edicion = id_lote
             self.view.btn_modificar.setText("💾  GUARDAR CAMBIOS")
-            for campo in (self.view.txt_proveedor, self.view.txt_ruc_proveedor,
-                          self.view.txt_guia_proveedor, self.view.txt_guia_transportista,
-                          self.view.txt_concesion, self.view.txt_codigo,
-                          self.view.txt_procedencia, self.view.txt_producto,
-                          self.view.txt_observacion, self.view.cmb_tipo_carga,
-                          self.view.txt_sacos):
-                campo.setEnabled(True)
+            self.view.bloquear_campos_comerciales(False)
             return
 
         # Segundo clic: persistir solo los campos comerciales permitidos.
@@ -889,6 +883,7 @@ class BalanzaController:
             self._lote_en_edicion = None
             self.view.btn_modificar.setText("✎  MODIFICAR")
             self.view.aplicar_modo_ingreso(estado_ingreso)
+            self.view.bloquear_campos_comerciales(False)
             self._refrescar_lotes()
             QMessageBox.information(self.view, "Modificar lote", "Los datos del lote se guardaron correctamente.")
             self.log(f"[OK] Datos comerciales actualizados para lote {lote_texto}.")
