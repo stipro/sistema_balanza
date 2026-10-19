@@ -24,7 +24,7 @@ from pathlib import Path
 
 from reportlab.lib import colors
 
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A4
 
 from reportlab.lib.utils import simpleSplit
 
@@ -216,13 +216,13 @@ class ReportePdfService:
 
     def _dibujar_ticket(cls, ruta, p):
 
-        ancho_pagina, alto_pagina = letter  # 612 x 792 puntos
+        ancho_pagina, alto_pagina = A4    # 612 x 792 puntos
 
-        margen_izq = 34
+        margen_izq = 18
 
         ancho = ancho_pagina - 2 * margen_izq  # 544 pt, similar al JRXML
 
-        c = canvas.Canvas(str(ruta), pagesize=letter, pageCompression=1)
+        c = canvas.Canvas(str(ruta), pagesize = A4, pageCompression=1)
 
         c.setTitle(f"Ticket de pesaje - Lote {cls._texto(p, 'lote')}")
 
@@ -278,47 +278,39 @@ class ReportePdfService:
 
         x_fin = x0 + ancho
 
-        x_valor = x0 + 113
+        x_valor = x0 + 100
 
-        x_col2 = x0 + 306
+        x_col2 = x0 + 400
 
-        x_col2_valor = x0 + 385
+        x_col2_valor = x0 + 445
 
 
 
         # Encabezado
-
-        texto(ancho_pagina / 2, 43, cls._texto(p, "empresa") or "MINERA MH S.A.C.", 13, True, "center")
-
-        texto(ancho_pagina / 2, 63, cls._texto(p, "titulo") or "TICKET DE PESAJE", 12, True, "center")
+        texto(ancho_pagina / 2, 28, cls._texto(p, "empresa") or "MINERA MH S.A.C.", 13, True, "center")
+        texto(ancho_pagina / 2, 48, cls._texto(p, "titulo") or "TICKET DE PESAJE", 12, True, "center")
 
         direccion = cls._texto(p, "direccion")
-
-        if direccion:
-
-            texto(ancho_pagina / 2, 77, direccion, 7.5, False, "center")
-
-        linea(86, grosor=1.1)
-
-
+        if direccion:texto(ancho_pagina / 2, 62, direccion, 7.5, False, "center")
+        linea(71, grosor=1.1)
 
         # Primera fila: placa y carreta.
 
-        texto(x0, 101, "PLACA :", 10)
+        texto(x0, 83, "PLACA :", 10)
 
-        texto(x_valor, 101, cls._texto(p, "placa"), 10)
+        texto(x_valor, 83, cls._texto(p, "placa"), 10)
 
-        texto(x_col2, 101, "CARRETA :", 10)
+        texto(230, 83, "CARRETA :", 10)
 
-        texto(x_col2_valor, 101, cls._texto(p, "carreta"), 10)
+        texto(200, 83, cls._texto(p, "carreta"), 10)
 
 
 
         # Lote destacado.
 
-        texto(x0, 119, "LOTE :", 10, True)
+        texto(395, 83, "LOTE :", 10, True)
 
-        texto(x_valor, 119, cls._texto(p, "lote"), 11, True)
+        texto(440, 83, cls._texto(p, "lote"), 11, True)
 
 
 
@@ -334,7 +326,7 @@ class ReportePdfService:
 
         ]
 
-        y = 137
+        y = 101
 
         for etiqueta1, clave1, etiqueta2, clave2 in filas:
 
@@ -344,7 +336,7 @@ class ReportePdfService:
 
             # Evita que nombres largos invadan la segunda columna.
 
-            if len(valor1) > 29:
+            if len(valor1) > 35:
 
                 valor1 = valor1[:26] + "..."
 
@@ -398,19 +390,19 @@ class ReportePdfService:
 
         if lineas_obs:
 
-            texto(x_valor, y, lineas_obs[0], 8.5)
+            texto(x_valor, y, lineas_obs[0], 10)
 
             for extra in lineas_obs[1:3]:
 
                 y += 11
 
-                texto(x_valor, y, extra, 8.5)
+                texto(x_valor, y, extra, 10)
 
-        y += 18
+        y += 8
 
         linea(y, grosor=1.1)
 
-        y += 22
+        y += 15
 
 
 
@@ -426,13 +418,13 @@ class ReportePdfService:
 
         # Fechas y horas de ambas pesadas.
 
-        texto(x0, y, "PRIMERA PESADA :", 9, True)
+        texto(x0, y, "PRIMERA PESADA :", 11, True)
 
-        texto(x0 + 119, y, f"{cls._texto(p, 'fecha1')}   {cls._formatear_hora(p.get('hora1'))}", 8.5)
+        texto(x0 + 119, y, f"{cls._texto(p, 'fecha1')}   {cls._formatear_hora(p.get('hora1'))}", 10)
 
-        texto(x_col2, y, "SEGUNDA PESADA :", 9, True)
+        texto(300, y, "SEGUNDA PESADA :", 11, True)
 
-        texto(x0 + 430, y, f"{cls._texto(p, 'fecha2')} {cls._formatear_hora(p.get('hora2'))}", 7.2)
+        texto(470, y, f"{cls._texto(p, 'fecha2')} {cls._formatear_hora(p.get('hora2'))}", 10)
 
         y += 22
 
@@ -444,21 +436,21 @@ class ReportePdfService:
 
         texto(x0 + 198, y, f"{cls._formatear_peso(p.get('peso_bruto'))} kg", 11, True, "right")
 
-        texto(x_col2, y, "P. TARA :", 11, True)
+        texto(350, y, "P. TARA :", 11, True)
 
-        texto(x_fin - 12, y, f"{cls._formatear_peso(p.get('peso_tara'))} kg", 11, True, "right")
+        texto(500, y, f"{cls._formatear_peso(p.get('peso_tara'))} kg", 11, True, "right")
 
-        y += 25
+        y += 8
 
         linea(y, grosor=1.1)
 
-        y += 31
+        y += 30
 
 
 
         # Peso neto destacado, alineado a la derecha.
 
-        texto(x0 + 292, y, "PESO NETO :", 13, True)
+        texto(x0 + 308, y, "PESO NETO :", 13, True)
 
         texto(x_fin - 43, y, cls._formatear_peso(p.get("peso_neto"), separador_decimal=","), 13, True, "right")
 
