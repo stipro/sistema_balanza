@@ -409,21 +409,19 @@ class PesajeService:
 
     @classmethod
     def capturar(cls, id_pesaje, peso, datos_lote=None):
-        """Captura el peso y, cuando corresponde, crea el siguiente lote en una transacción.
+        """Captura el peso siguiendo la cadena de lotes ya reservados.
 
         Reglas:
-        - Primera captura sin lotes: crea el primer lote y lo asigna como BRUTO.
-        - Si ya existe un siguiente lote reservado, se respeta; no se crea otro.
-        - Si hay un lote abierto (espera TARA) y no existe siguiente lote, puede
-          crearse automáticamente el próximo lote. La captura queda como TARA
-          del lote abierto y BRUTO del nuevo lote.
-        - No se crea automáticamente si hay capturas huérfanas sin asignar.
-        - Si todos los lotes están completos, no se crea otro lote con una pesada
-          adicional; se debe usar AGREGAR LOTE o GUARDAR.
+        - Si no existen lotes ni capturas, crea el primer lote con datos_lote.
+        - Si existe un lote sin bruto, la captura será su BRUTO.
+        - Si existe un lote abierto y otro reservado sin bruto, la captura
+          será TARA del primero y BRUTO del siguiente.
+        - Si solo queda un lote abierto, la captura será únicamente su TARA.
+        - Nunca crea un lote adicional automáticamente durante una captura
+          intermedia. Para crear otro lote se debe usar AGREGAR LOTE.
 
-        Si una validación falla, la transacción revierte lote, captura y correlativo.
+        Toda la operación se ejecuta en una única transacción.
         """
-
         peso = cls._normalizar_peso(peso)
 
         with transaccion() as cx:
@@ -434,7 +432,8 @@ class PesajeService:
             sin_capturas = PesajeRegistroModel.ultimo_valido(id_pesaje, cx) is None
             lote_creado = None
 
-            # Primera captura: debe existir el primer lote antes de guardar el peso.
+            # Solo crear automáticamente el primer lote cuando la operación
+            # está vacía. No crear lotes nuevos por una captura intermedia.
             if abierto is None and siguiente is None and sin_capturas:
                 if datos_lote is None:
                     raise ReglaNegocioError(
@@ -444,27 +443,9 @@ class PesajeService:
                 id_lote = cls._agregar_lote_tx(cx, id_pesaje, datos_lote)
                 lote_creado = PesajeLoteModel.by_id(id_lote, cx)["lote"]
 
-            # La captura intermedia también será BRUTO del siguiente lote,
-            # pero solo si no había un lote ya reservado para recibirla.
-            elif abierto is not None and siguiente is None:
-                if datos_lote is None:
-                    raise ReglaNegocioError(
-                        "No hay un siguiente lote reservado. Complete los datos "
-                        "del nuevo lote para crearlo automáticamente, o use AGREGAR LOTE."
-                    )
-
-                huerfanas = PesajeRegistroModel.contar_huerfanas(id_pesaje, cx)
-                if huerfanas:
-                    raise ReglaNegocioError(
-                        "No se puede crear automáticamente el siguiente lote porque "
-                        f"hay {huerfanas} pesada(s) sin asignar. Revise los pesajes "
-                        "pendientes antes de continuar."
-                    )
-
-                cls._validar_datos_lote_nuevo(datos_lote)
-                id_lote = cls._agregar_lote_tx(cx, id_pesaje, datos_lote)
-                lote_creado = PesajeLoteModel.by_id(id_lote, cx)["lote"]
-
+            # Si no hay lotes pendientes de recibir una captura, _capturar_tx
+            # mostrará el mensaje apropiado. No inferimos que el operador
+            # quiere crear otro lote a partir de los campos del formulario.
             resultado = cls._capturar_tx(cx, id_pesaje, peso)
             resultado["lote_creado"] = lote_creado
 

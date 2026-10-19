@@ -593,16 +593,11 @@ class BalanzaController:
             # Sincronizar datos generales del ingreso
             self._sincronizar_datos_generales()
 
-            # El Service decide si necesita crear un lote nuevo.
-            # Si ya existe un lote reservado, estos datos se ignoran.
+            # Los datos del formulario solo se usan si la operación aún no
+            # tiene ningún lote ni captura (creación del primer lote).
+            # La existencia de una selección en la tabla nunca debe provocar
+            # la creación automática de otro lote.
             datos_lote = self.view.obtener_datos_lote()
-
-            # El Service decide automáticamente:
-            #
-            # 1. Primera pesada  -> BRUTO lote 1
-            # 2. Siguiente       -> TARA lote anterior
-            #                       + BRUTO lote siguiente
-            # 3. Última           -> TARA último lote
             resultado = PesajeService.capturar(
                 self.ingreso_actual["id_pesaje"],
                 self.ultimo_peso,
