@@ -163,7 +163,7 @@ class PesajeService:
             if ingreso is None:
                 raise ReglaNegocioError("El ingreso del lote no existe.")
             campos = PesajeLoteModel.solo_columnas(
-                datos, excluir=("id_pesaje", "orden", "lote",
+                datos, excluir=("id_pesaje", "orden",
                                 "id_registro_bruto", "id_registro_tara",
                                 "estado", "motivo_anulacion")
             )

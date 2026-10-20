@@ -879,10 +879,13 @@ class BalanzaController:
 
             if self.ingreso_actual:
                 self.view.limpiar_campos_lote()
-                self.view.mostrar_proximo_lote(
-                    ConfiguracionLotesModel.proximo_lote()
-                )
-                self.view.aplicar_modo_ingreso("EN_PROCESO")
+                ingreso = PesajeModel.by_id(self.ingreso_actual["id_pesaje"])
+                estado = ingreso.get("estado") if ingreso else "EN_PROCESO"
+                if estado == "EN_PROCESO":
+                    self.view.mostrar_proximo_lote(
+                        ConfiguracionLotesModel.proximo_lote()
+                    )
+                self.view.aplicar_modo_ingreso(estado)
 
             return
     
@@ -948,16 +951,28 @@ class BalanzaController:
             self._lote_en_edicion = id_lote
             self.view.btn_modificar.setText("💾  GUARDAR CAMBIOS")
             self.view.bloquear_campos_comerciales(False)
+            # El lote puede renombrarse mientras el ingreso sigue abierto.
+            # En un ingreso confirmado se conserva como identificador fijo.
+            self.view.txt_lote.setEnabled(estado_ingreso == "EN_PROCESO")
+            # Placa y carreta pertenecen al ingreso (ticket), por eso se
+            # modifican desde el lote seleccionado y se guardan en pesajes.
+            self.view.habilitar_edicion_vehiculo(True)
             return
 
         # Segundo clic: persistir solo los campos comerciales permitidos.
         try:
             datos = self.view.obtener_datos_lote()
+            if estado_ingreso != "EN_PROCESO":
+                datos.pop("lote", None)
+            # Persistir placa/carreta en el ingreso asociado al lote.
+            self._sincronizar_datos_generales()
             PesajeService.actualizar_lote(id_lote, datos)
             self._lote_en_edicion = None
             self.view.btn_modificar.setText("✎  MODIFICAR")
-            self.view.aplicar_modo_ingreso(estado_ingreso)
-            self.view.bloquear_campos_comerciales(False)
+            # La edición termina quitando la selección. La tabla no debe
+            # conservar visualmente un lote cuyo formulario ya fue guardado.
+            self.view.tabla_pesajes.clearSelection()
+            self.view.tabla_pesajes.setCurrentItem(None)
             self._refrescar_lotes()
             QMessageBox.information(self.view, "Modificar lote", "Los datos del lote se guardaron correctamente.")
             self.log(f"[OK] Datos comerciales actualizados para lote {lote_texto}.")

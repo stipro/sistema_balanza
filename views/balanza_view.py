@@ -1442,6 +1442,11 @@ class BalanzaView(QMainWindow):
         for campo in campos:
             campo.setEnabled(not bloquear)
 
+    def habilitar_edicion_vehiculo(self, habilitar=True):
+        """Permite editar placa/carreta al modificar un lote del ingreso."""
+        self.txt_placa.setEnabled(habilitar)
+        self.txt_carreta.setEnabled(habilitar)
+
     def cargar_datos_lote(self, lote):
         """Carga los datos comerciales de un lote en el formulario."""
         self.txt_lote.setText(str(lote.get("lote") or ""))
@@ -1484,8 +1489,12 @@ class BalanzaView(QMainWindow):
             self.txt_concesion.clear()
             self.txt_codigo.clear()
         # Mostrar los datos del lote en modo consulta.
-        # Para editarlos se debe pulsar MODIFICAR.
+        # En consulta todos los campos quedan bloqueados; MODIFICAR abre
+        # explícitamente los campos que se pueden cambiar.
         self.bloquear_campos_comerciales(True)
+        self.txt_lote.setEnabled(False)
+        self.habilitar_edicion_vehiculo(False)
+        self.btn_agregar_lote.setEnabled(False)
 
     def limpiar_campos_lote(self):
         """Después de agregar un lote: limpia lo propio del lote,
