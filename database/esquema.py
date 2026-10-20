@@ -6,7 +6,7 @@ from database.conexion import obtener_conexion, transaccion
 
 # Súbelo cuando cambies el esquema. Si la BD existente tiene otra versión,
 # inicializar_base_datos() avisa en lugar de dejar tablas viejas a medias.
-VERSION_ESQUEMA = 4
+VERSION_ESQUEMA = 5
 
 _AHORA_SQL = "strftime('%Y-%m-%dT%H:%M:%S','now','localtime')"
 
@@ -160,6 +160,22 @@ DDL_HISTORIAL_ELIMINACIONES = """
         eliminado_en TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
     )"""
 
+DDL_HISTORIAL_CORRECCIONES_PESAJE = """
+    CREATE TABLE IF NOT EXISTS historial_correcciones_pesaje (
+        id_correccion INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_pesaje INTEGER NOT NULL,
+        id_registro INTEGER NOT NULL,
+        id_pesaje_lote INTEGER NOT NULL,
+        tipo TEXT NOT NULL CHECK (tipo IN ('BRUTO', 'TARA')),
+        peso_anterior INTEGER NOT NULL CHECK (peso_anterior > 0),
+        peso_nuevo INTEGER NOT NULL CHECK (peso_nuevo > 0),
+        motivo TEXT NOT NULL CHECK (length(trim(motivo)) > 0),
+        fecha_hora TEXT NOT NULL,
+        FOREIGN KEY (id_pesaje) REFERENCES pesajes(id_pesaje),
+        FOREIGN KEY (id_registro) REFERENCES pesajes_registros(id_registro),
+        FOREIGN KEY (id_pesaje_lote) REFERENCES pesajes_lotes(id_pesaje_lote)
+    )"""
+
 INDICES = [
     "CREATE INDEX IF NOT EXISTS ix_pesajes_estado ON pesajes(estado)",
     """CREATE INDEX IF NOT EXISTS ix_pesajes_sync
@@ -167,6 +183,8 @@ INDICES = [
     "CREATE INDEX IF NOT EXISTS ix_lotes_pesaje ON pesajes_lotes(id_pesaje)",
     """CREATE INDEX IF NOT EXISTS ix_registros_pesaje
        ON pesajes_registros(id_pesaje)""",
+    """CREATE INDEX IF NOT EXISTS ix_correcciones_registro
+       ON historial_correcciones_pesaje(id_registro, id_correccion)""",
 ]
 
 # Las capturas son solo de inserción (se puede marcar 'anulado', nada más)
@@ -221,13 +239,33 @@ VISTA_LOTES = """
         cd.brevete AS brevete,
         tr.nombre AS transportista,
         tr.ruc AS ruc_transportista,
-        rb.peso AS peso_bruto,
+        COALESCE(
+            (SELECT hc.peso_nuevo FROM historial_correcciones_pesaje hc
+              WHERE hc.id_registro = rb.id_registro
+              ORDER BY hc.id_correccion DESC LIMIT 1),
+            rb.peso
+        ) AS peso_bruto,
         rb.fecha_hora AS fecha_bruto,
-        rt.peso AS peso_tara,
+        COALESCE(
+            (SELECT hc.peso_nuevo FROM historial_correcciones_pesaje hc
+              WHERE hc.id_registro = rt.id_registro
+              ORDER BY hc.id_correccion DESC LIMIT 1),
+            rt.peso
+        ) AS peso_tara,
         rt.fecha_hora AS fecha_tara,
         CASE
             WHEN rb.peso IS NOT NULL AND rt.peso IS NOT NULL
-            THEN rb.peso - rt.peso
+            THEN COALESCE(
+                (SELECT hc.peso_nuevo FROM historial_correcciones_pesaje hc
+                  WHERE hc.id_registro = rb.id_registro
+                  ORDER BY hc.id_correccion DESC LIMIT 1),
+                rb.peso
+            ) - COALESCE(
+                (SELECT hc.peso_nuevo FROM historial_correcciones_pesaje hc
+                  WHERE hc.id_registro = rt.id_registro
+                  ORDER BY hc.id_correccion DESC LIMIT 1),
+                rt.peso
+            )
         END AS peso_neto,
         pl.estado,
         pl.motivo_anulacion
@@ -281,6 +319,7 @@ def inicializar_base_datos():
         conexion.execute(DDL_REGISTROS)
         conexion.execute(DDL_LOTES)
         conexion.execute(DDL_HISTORIAL_ELIMINACIONES)
+        conexion.execute(DDL_HISTORIAL_CORRECCIONES_PESAJE)
 
         for sentencia in INDICES + TRIGGERS:
             conexion.execute(sentencia)

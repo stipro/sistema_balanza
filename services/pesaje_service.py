@@ -13,7 +13,7 @@ import math
 import json
 import re
 
-from database.conexion import transaccion
+from database.conexion import ahora, transaccion
 from models.base import ReglaNegocioError
 from models.pesajes import (
     ConfiguracionLotesModel,
@@ -62,6 +62,178 @@ class PesajeService:
             )
 
         return int(entero)
+
+    @staticmethod
+    def _peso_evento_tx(cx, id_registro):
+        fila = cx.execute(
+            """SELECT r.peso,
+                      (SELECT c.peso_nuevo
+                         FROM historial_correcciones_pesaje c
+                        WHERE c.id_registro = r.id_registro
+                        ORDER BY c.id_correccion DESC LIMIT 1) AS corregido
+                 FROM pesajes_registros r WHERE r.id_registro = ?""",
+            (id_registro,),
+        ).fetchone()
+        if fila is None:
+            return None
+        return fila["corregido"] if fila["corregido"] is not None else fila["peso"]
+
+    @classmethod
+    def _preparar_correccion_tx(cls, cx, id_pesaje, id_lote, tipo, peso_nuevo):
+        tipo = (tipo or "").upper()
+        if tipo not in ("BRUTO", "TARA"):
+            raise ReglaNegocioError("Seleccione una celda de peso bruto o tara.")
+
+        ingreso = cx.execute(
+            "SELECT * FROM pesajes WHERE id_pesaje = ?", (id_pesaje,)
+        ).fetchone()
+        if ingreso is None:
+            raise ReglaNegocioError("El ingreso ya no existe.")
+        if ingreso["estado"] == "ANULADO":
+            raise ReglaNegocioError("No se pueden corregir pesajes de un ingreso anulado.")
+        if ingreso["sincronizado"]:
+            raise ReglaNegocioError(
+                "El ingreso ya fue sincronizado; no se pueden corregir sus pesajes."
+            )
+
+        lote = cx.execute(
+            "SELECT * FROM pesajes_lotes WHERE id_pesaje_lote = ? AND id_pesaje = ?",
+            (id_lote, id_pesaje),
+        ).fetchone()
+        if lote is None or lote["estado"] == "ANULADO":
+            raise ReglaNegocioError("El lote seleccionado no existe o está anulado.")
+
+        primero = cx.execute(
+            "SELECT MIN(orden) FROM pesajes_lotes "
+            "WHERE id_pesaje = ? AND estado <> 'ANULADO'",
+            (id_pesaje,),
+        ).fetchone()[0]
+        if tipo == "BRUTO" and lote["orden"] != primero:
+            raise ReglaNegocioError(
+                "Para corregir un bruto, seleccione la primera pesada del primer lote."
+            )
+        campo_id = "id_registro_bruto" if tipo == "BRUTO" else "id_registro_tara"
+        id_registro = lote[campo_id]
+        if id_registro is None:
+            raise ReglaNegocioError("La celda seleccionada todavía no tiene una captura.")
+
+        registro = cx.execute(
+            "SELECT * FROM pesajes_registros WHERE id_registro = ? AND id_pesaje = ?",
+            (id_registro, id_pesaje),
+        ).fetchone()
+        if registro is None or registro["anulado"]:
+            raise ReglaNegocioError("La captura seleccionada ya no está vigente.")
+
+        peso_anterior = cls._peso_evento_tx(cx, id_registro)
+        if peso_nuevo == peso_anterior:
+            raise ReglaNegocioError("El peso nuevo es igual al peso actual.")
+
+        def peso_sql(alias):
+            return f"COALESCE((SELECT c.peso_nuevo FROM historial_correcciones_pesaje c " \
+                   f"WHERE c.id_registro = {alias}.id_registro " \
+                   f"ORDER BY c.id_correccion DESC LIMIT 1), {alias}.peso)"
+
+        anterior = cx.execute(
+            f"SELECT {peso_sql('r')} AS peso FROM pesajes_registros r "
+            "WHERE r.id_pesaje = ? AND r.anulado = 0 AND r.secuencia < ? "
+            "ORDER BY r.secuencia DESC LIMIT 1",
+            (id_pesaje, registro["secuencia"]),
+        ).fetchone()
+        siguiente = cx.execute(
+            f"SELECT {peso_sql('r')} AS peso FROM pesajes_registros r "
+            "WHERE r.id_pesaje = ? AND r.anulado = 0 AND r.secuencia > ? "
+            "ORDER BY r.secuencia LIMIT 1",
+            (id_pesaje, registro["secuencia"]),
+        ).fetchone()
+        if anterior and peso_nuevo >= anterior["peso"]:
+            raise ReglaNegocioError(
+                f"El nuevo peso debe ser menor que la captura anterior ({anterior['peso']} kg)."
+            )
+        if siguiente and peso_nuevo <= siguiente["peso"]:
+            raise ReglaNegocioError(
+                f"El nuevo peso debe ser mayor que la captura siguiente ({siguiente['peso']} kg)."
+            )
+
+        referencias = cx.execute(
+            """SELECT id_pesaje_lote, lote, id_registro_bruto, id_registro_tara
+                 FROM pesajes_lotes
+                WHERE id_pesaje = ? AND estado <> 'ANULADO'
+                  AND (id_registro_bruto = ? OR id_registro_tara = ?)
+                ORDER BY orden""",
+            (id_pesaje, id_registro, id_registro),
+        ).fetchall()
+        afectados = []
+        for referencia in referencias:
+            bruto_anterior = (
+                cls._peso_evento_tx(cx, referencia["id_registro_bruto"])
+                if referencia["id_registro_bruto"] is not None else None
+            )
+            tara_anterior = (
+                cls._peso_evento_tx(cx, referencia["id_registro_tara"])
+                if referencia["id_registro_tara"] is not None else None
+            )
+            bruto_nuevo = (
+                peso_nuevo if referencia["id_registro_bruto"] == id_registro
+                else bruto_anterior
+            )
+            tara_nueva = (
+                peso_nuevo if referencia["id_registro_tara"] == id_registro
+                else tara_anterior
+            )
+            if bruto_nuevo is not None and tara_nueva is not None and bruto_nuevo <= tara_nueva:
+                raise ReglaNegocioError(
+                    f"La corrección dejaría el bruto del lote {referencia['lote']} "
+                    "menor o igual que su tara."
+                )
+            afectados.append({
+                "lote": referencia["lote"],
+                "neto_anterior": (
+                    bruto_anterior - tara_anterior
+                    if bruto_anterior is not None and tara_anterior is not None else None
+                ),
+                "neto_nuevo": (
+                    bruto_nuevo - tara_nueva
+                    if bruto_nuevo is not None and tara_nueva is not None else None
+                ),
+            })
+
+        return {
+            "id_registro": id_registro,
+            "tipo": tipo,
+            "lote_seleccionado": lote["lote"],
+            "peso_anterior": peso_anterior,
+            "peso_nuevo": peso_nuevo,
+            "secuencia": registro["secuencia"],
+            "afectados": afectados,
+        }
+
+    @classmethod
+    def previsualizar_correccion_pesaje(cls, id_pesaje, id_lote, tipo, peso):
+        peso_nuevo = cls._normalizar_peso(peso)
+        with transaccion() as cx:
+            return cls._preparar_correccion_tx(
+                cx, id_pesaje, id_lote, tipo, peso_nuevo
+            )
+
+    @classmethod
+    def corregir_pesaje(cls, id_pesaje, id_lote, tipo, peso, motivo):
+        motivo = (motivo or "").strip()
+        if not motivo:
+            raise ReglaNegocioError("Indique el motivo de la corrección.")
+        peso_nuevo = cls._normalizar_peso(peso)
+        with transaccion() as cx:
+            datos = cls._preparar_correccion_tx(
+                cx, id_pesaje, id_lote, tipo, peso_nuevo
+            )
+            cx.execute(
+                """INSERT INTO historial_correcciones_pesaje
+                   (id_pesaje, id_registro, id_pesaje_lote, tipo,
+                    peso_anterior, peso_nuevo, motivo, fecha_hora)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (id_pesaje, datos["id_registro"], id_lote, datos["tipo"],
+                 datos["peso_anterior"], peso_nuevo, motivo, ahora()),
+            )
+        return datos
 
     # INGRESO
     @classmethod
@@ -381,12 +553,12 @@ class PesajeService:
         }
 
         if abierto:
-            bruto = PesajeRegistroModel.by_id(abierto["id_registro_bruto"], cx)
+            peso_bruto = cls._peso_evento_tx(cx, abierto["id_registro_bruto"])
 
             PesajeLoteModel.asignar_tara(abierto["id_pesaje_lote"], id_registro, cx)
 
             resultado["tara_de"] = abierto["lote"]
-            resultado["neto"] = bruto["peso"] - peso
+            resultado["neto"] = peso_bruto - peso
 
         if siguiente:
             PesajeLoteModel.asignar_bruto(siguiente["id_pesaje_lote"], id_registro, cx)

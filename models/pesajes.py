@@ -566,13 +566,23 @@ class PesajeRegistroModel(ModeloBase):
 
         with lectura(conexion) as cx:
             fila = cx.execute(
-                "SELECT * FROM pesajes_registros "
-                "WHERE id_pesaje = ? AND anulado = 0 "
-                "ORDER BY secuencia DESC LIMIT 1",
+                """SELECT r.*,
+                          COALESCE((SELECT c.peso_nuevo
+                                      FROM historial_correcciones_pesaje c
+                                     WHERE c.id_registro = r.id_registro
+                                     ORDER BY c.id_correccion DESC LIMIT 1),
+                                   r.peso) AS peso_actual
+                     FROM pesajes_registros r
+                    WHERE r.id_pesaje = ? AND r.anulado = 0
+                    ORDER BY r.secuencia DESC LIMIT 1""",
                 (id_pesaje,),
             ).fetchone()
 
-        return cls._a_dict(fila)
+        if fila is None:
+            return None
+        datos = dict(fila)
+        datos["peso"] = datos.pop("peso_actual")
+        return datos
 
     @classmethod
     def ultimo_sin_bruto(cls, id_pesaje, conexion=None):

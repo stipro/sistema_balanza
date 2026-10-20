@@ -589,6 +589,11 @@ class BalanzaController:
             )
             return
 
+        celda = self._celda_peso_seleccionada()
+        if celda:
+            self._corregir_pesaje_seleccionado(celda)
+            return
+
         try:
             # Sincronizar datos generales del ingreso
             self._sincronizar_datos_generales()
@@ -619,6 +624,130 @@ class BalanzaController:
                 self.view,
                 "Capturar peso",
                 str(e),
+            )
+
+    def _celda_peso_seleccionada(self):
+        """Devuelve el peso capturado de la celda actual, si corresponde."""
+        tabla = self.view.tabla_pesajes
+        if not tabla.selectionModel().hasSelection():
+            return None
+        fila = tabla.currentRow()
+        columna = tabla.currentColumn()
+        if fila < 0 or columna not in (3, 5):
+            return None
+        item_lote = tabla.item(fila, 0)
+        item_peso = tabla.item(fila, columna)
+        if item_lote is None or item_peso is None or not item_peso.text().strip():
+            return None
+        id_lote = self._mapa_lotes.get(item_lote.text().strip())
+        if id_lote is None:
+            return None
+        lote = PesajeLoteModel.by_id(id_lote)
+        if not lote:
+            return None
+        tipo = "BRUTO" if columna == 3 else "TARA"
+        id_registro = lote.get(
+            "id_registro_bruto" if tipo == "BRUTO" else "id_registro_tara"
+        )
+        if id_registro is None:
+            return None
+        return {
+            "id_lote": id_lote,
+            "lote": item_lote.text().strip(),
+            "tipo": tipo,
+        }
+
+    def _actualizar_boton_captura_segun_celda(self):
+        celda = self._celda_peso_seleccionada()
+        if celda:
+            self.view.btn_capturar.setText(f"⚖  CORREGIR {celda['tipo']}")
+        else:
+            self.view.btn_capturar.setText("⚖  CAPTURAR PESO")
+
+        if self.ingreso_actual:
+            ingreso = PesajeModel.by_id(self.ingreso_actual["id_pesaje"])
+            if ingreso and ingreso.get("estado") != "EN_PROCESO":
+                self.view.btn_capturar.setEnabled(
+                    bool(celda)
+                    and ingreso.get("estado") == "CONFIRMADO"
+                    and not ingreso.get("sincronizado")
+                    and self.balanza_comunicando
+                )
+
+    def _corregir_pesaje_seleccionado(self, celda):
+        id_pesaje = self.ingreso_actual["id_pesaje"]
+        try:
+            previo = PesajeService.previsualizar_correccion_pesaje(
+                id_pesaje, celda["id_lote"], celda["tipo"], self.ultimo_peso
+            )
+        except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "Corregir pesada", str(e))
+            return
+        except Exception as e:
+            QMessageBox.critical(
+                self.view,
+                "Error al corregir pesada",
+                f"No se pudo corregir la captura. No se aplicaron cambios.\n\n{e}",
+            )
+            return
+
+        detalle_afectados = []
+        for afectado in previo["afectados"]:
+            linea = f"• Lote {afectado['lote']}"
+            if afectado["neto_anterior"] is not None:
+                linea += (
+                    f": neto {afectado['neto_anterior']} kg → "
+                    f"{afectado['neto_nuevo']} kg"
+                )
+            detalle_afectados.append(linea)
+        mensaje = (
+            f"Se reemplazará la captura {previo['secuencia']} seleccionada "
+            f"como {previo['tipo']} del lote {previo['lote_seleccionado']}.\n\n"
+            f"Peso actual: {previo['peso_anterior']} kg\n"
+            f"Nuevo peso: {previo['peso_nuevo']} kg\n\n"
+            "Lotes afectados:\n" + "\n".join(detalle_afectados)
+            + "\n\n¿Desea continuar?"
+        )
+        respuesta = QMessageBox.question(
+            self.view,
+            "Confirmar corrección de pesada",
+            mensaje,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if respuesta != QMessageBox.StandardButton.Yes:
+            return
+
+        motivo, ok = self.view.pedir_motivo("Corregir pesada")
+        if not ok or not motivo:
+            return
+
+        try:
+            resultado = PesajeService.corregir_pesaje(
+                id_pesaje, celda["id_lote"], celda["tipo"],
+                self.ultimo_peso, motivo,
+            )
+            self.log(
+                f"[CORRECCIÓN PESO] Captura #{resultado['secuencia']} "
+                f"{resultado['peso_anterior']} -> {resultado['peso_nuevo']} kg. "
+                f"Motivo: {motivo}"
+            )
+            self.view.tabla_pesajes.clearSelection()
+            self.view.tabla_pesajes.setCurrentItem(None)
+            self._actualizar_boton_captura_segun_celda()
+            self._refrescar_lotes()
+            QMessageBox.information(
+                self.view,
+                "Corregir pesada",
+                "La pesada fue corregida y se recalcularon los pesos netos afectados.",
+            )
+        except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "Corregir pesada", str(e))
+        except Exception as e:
+            QMessageBox.critical(
+                self.view,
+                "Error al corregir pesada",
+                f"No se pudo corregir la captura. No se aplicaron cambios.\n\n{e}",
             )
 
     def _capturar_nuevo_lote_con_peso(self):
@@ -876,6 +1005,7 @@ class BalanzaController:
         if not lote_texto:
             self._lote_en_edicion = None
             self.view.btn_modificar.setText("✎  MODIFICAR")
+            self._actualizar_boton_captura_segun_celda()
 
             if self.ingreso_actual:
                 self.view.limpiar_campos_lote()
@@ -901,6 +1031,13 @@ class BalanzaController:
             return
 
         try:
+            if self._lote_en_edicion == id_lote:
+                # Cambiar de celda dentro de la misma fila no debe cancelar
+                # ni volver a bloquear una edición ya abierta.
+                self._actualizar_boton_captura_segun_celda()
+                return
+
+            self._lote_en_edicion = None
             lote = PesajeLoteModel.detalle_por_id(id_lote)
             if not lote:
                 return
@@ -908,6 +1045,7 @@ class BalanzaController:
             # No recargar el mismo lote repetidamente si el cambio de selección
             # fue provocado por un refresco de la tabla.
             self.view.cargar_datos_lote(lote)
+            self._actualizar_boton_captura_segun_celda()
 
             # Si no estamos en edición, el botón conserva su función de entrar
             # al modo de modificación para el lote seleccionado.

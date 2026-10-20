@@ -716,7 +716,7 @@ class BalanzaView(QMainWindow):
         self.tabla_pesajes.verticalHeader().setDefaultSectionSize(30)
 
         self.tabla_pesajes.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
+            QAbstractItemView.SelectionBehavior.SelectItems
         )
         self.tabla_pesajes.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection
@@ -889,6 +889,14 @@ class BalanzaView(QMainWindow):
 
                 item = QTableWidgetItem(str(valor))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                if c in (3, 5) and valor not in (None, ""):
+                    item.setToolTip(
+                        "Selecciona esta celda y pulsa CAPTURAR PESO para corregirla. "
+                        "El bruto se corrige desde el primer lote; la tara se puede "
+                        "corregir en cualquier lote. Si la captura es compartida, "
+                        "también se actualiza el peso relacionado del lote siguiente."
+                    )
 
                 if c == 7:
                     color = "#15803d" if str(valor) == "COMPLETO" else "#b45309"
@@ -1573,12 +1581,11 @@ class BalanzaView(QMainWindow):
         Devuelve el texto del lote (columna 0) de la fila seleccionada
         en la tabla, o None si no hay selección.
         """
-        items = self.tabla_pesajes.selectedItems()
-
-        if not items:
+        tabla = self.tabla_pesajes
+        if not tabla.selectionModel().hasSelection() or tabla.currentRow() < 0:
             return None
-
-        return items[0].text().strip() or None
+        item = tabla.item(tabla.currentRow(), 0)
+        return item.text().strip() if item else None
 
 
     def configurar_deseleccion_tabla(self):
@@ -1595,10 +1602,8 @@ class BalanzaView(QMainWindow):
             tabla = self.tabla_pesajes
             indice = tabla.indexAt(event.position().toPoint())
 
-            # Clic en zona vacía, o en la fila ya seleccionada
-            if not indice.isValid() or tabla.selectionModel().isRowSelected(
-                indice.row(), indice.parent()
-            ):
+            # Clic en zona vacía o nuevamente en la misma celda.
+            if not indice.isValid() or tabla.selectionModel().isSelected(indice):
                 tabla.clearSelection()
                 tabla.setCurrentItem(None)
                 return True  # consume el evento

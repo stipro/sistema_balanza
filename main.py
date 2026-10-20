@@ -1,6 +1,7 @@
 """Punto de entrada de SistemaBalanza con selección segura de SQLite."""
 import sys
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -9,11 +10,20 @@ from database.conexion import usar_base_datos, ruta_base_datos
 from database.selector_base_datos import (
     seleccionar_base_datos, cargar_ruta_guardada, guardar_ruta,
 )
-from database.esquema import inicializar_base_datos, VERSION_ESQUEMA
+from database.esquema import (
+    DDL_HISTORIAL_CORRECCIONES_PESAJE,
+    VISTA_LOTES,
+    inicializar_base_datos,
+    VERSION_ESQUEMA,
+)
 from views.balanza_view import BalanzaView
 from controllers.balanza_controller import BalanzaController
 
-TABLAS_REQUERIDAS = {"pesajes", "pesajes_lotes", "pesajes_registros"}
+TABLAS_REQUERIDAS = {
+    "pesajes", "pesajes_lotes", "pesajes_registros",
+    "historial_correcciones_pesaje",
+}
+TABLAS_BASE_V4 = {"pesajes", "pesajes_lotes", "pesajes_registros"}
 
 
 def validar_archivo_sqlite(ruta):
@@ -54,7 +64,7 @@ def inspeccionar_esquema(ruta):
 
 
 def validar_esquema_existente(ruta):
-    """Acepta solo una BD del esquema esperado; nunca la migra automáticamente."""
+    """Comprueba la versión y las tablas requeridas de la base activa."""
     tablas, version = inspeccionar_esquema(ruta)
     faltantes = TABLAS_REQUERIDAS - tablas
     if faltantes:
@@ -69,8 +79,55 @@ def validar_esquema_existente(ruta):
         raise ValueError(
             f"La base tiene la versión de esquema {version}, pero esta aplicación "
             f"requiere la versión {VERSION_ESQUEMA}.\n\n"
-            "Por seguridad no se ejecutó ninguna migración automática ni se borraron datos."
+            "No se borraron datos."
         )
+
+
+def migrar_esquema_v4_a_v5(ruta):
+    """Añade el historial de correcciones de forma segura y con respaldo."""
+    tablas, version = inspeccionar_esquema(ruta)
+    if version != 4:
+        return
+    faltantes = TABLAS_BASE_V4 - tablas
+    if faltantes:
+        return  # La validación normal mostrará qué falta.
+
+    marca_tiempo = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    respaldo = ruta.with_name(
+        f"{ruta.stem}.backup-v4-{marca_tiempo}{ruta.suffix}"
+    )
+    origen = sqlite3.connect(str(ruta), timeout=10)
+    copia = sqlite3.connect(str(respaldo), timeout=10)
+    try:
+        origen.backup(copia)
+    except BaseException:
+        copia.close()
+        respaldo.unlink(missing_ok=True)
+        raise
+    finally:
+        origen.close()
+        if copia:
+            copia.close()
+
+    conexion = sqlite3.connect(str(ruta), timeout=10, isolation_level=None)
+    try:
+        conexion.execute("PRAGMA foreign_keys = ON")
+        conexion.execute("BEGIN IMMEDIATE")
+        conexion.execute(DDL_HISTORIAL_CORRECCIONES_PESAJE)
+        conexion.execute(
+            "CREATE INDEX IF NOT EXISTS ix_correcciones_registro "
+            "ON historial_correcciones_pesaje(id_registro, id_correccion)"
+        )
+        conexion.execute("DROP VIEW IF EXISTS v_lotes_detalle")
+        conexion.execute(VISTA_LOTES)
+        conexion.execute("PRAGMA user_version = 5")
+        conexion.commit()
+    except BaseException:
+        if conexion.in_transaction:
+            conexion.rollback()
+        raise
+    finally:
+        conexion.close()
 
 
 def preparar_base(ruta, es_nueva=False):
@@ -82,6 +139,7 @@ def preparar_base(ruta, es_nueva=False):
         validar_archivo_sqlite(ruta)
         validar_esquema_existente(ruta)
     else:
+        migrar_esquema_v4_a_v5(ruta)
         validar_esquema_existente(ruta)
     return ruta
 
