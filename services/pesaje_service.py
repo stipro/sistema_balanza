@@ -12,6 +12,7 @@ Cadena de pesadas (N lotes = N+1 capturas):
 import math
 import json
 import re
+from datetime import datetime
 
 from database.conexion import ahora, transaccion
 from models.base import ReglaNegocioError
@@ -206,6 +207,150 @@ class PesajeService:
             "secuencia": registro["secuencia"],
             "afectados": afectados,
         }
+
+    @staticmethod
+    def _normalizar_fecha_hora(valor):
+        texto = (valor or "").strip()
+        for formato in ("%Y-%m-%d %I:%M:%S %p", "%Y-%m-%d %I:%M %p",
+                        "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
+                        "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M"):
+            try:
+                return datetime.strptime(texto, formato).strftime("%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                pass
+        raise ReglaNegocioError(
+            "Use el formato AAAA-MM-DD HH:MM:SS para la fecha y hora."
+        )
+
+    @staticmethod
+    def formatear_fecha_hora(valor):
+        if not valor:
+            return ""
+        try:
+            return datetime.fromisoformat(str(valor).replace("Z", "+00:00")).strftime(
+                "%Y-%m-%d %I:%M:%S %p"
+            )
+        except ValueError:
+            return str(valor).replace("T", " ")
+
+    @staticmethod
+    def _fecha_evento_tx(cx, id_registro):
+        fila = cx.execute(
+            """SELECT r.fecha_hora,
+                      (SELECT c.fecha_hora_nueva
+                         FROM historial_correcciones_pesaje c
+                        WHERE c.id_registro = r.id_registro
+                          AND c.fecha_hora_nueva IS NOT NULL
+                        ORDER BY c.id_correccion DESC LIMIT 1) AS corregida
+                 FROM pesajes_registros r WHERE r.id_registro = ?""",
+            (id_registro,),
+        ).fetchone()
+        if fila is None:
+            return None
+        return fila["corregida"] or fila["fecha_hora"]
+
+    @classmethod
+    def _preparar_correccion_fecha_tx(cls, cx, id_pesaje, id_lote, tipo, fecha_nueva):
+        tipo = (tipo or "").upper()
+        if tipo not in ("BRUTO", "TARA"):
+            raise ReglaNegocioError("Seleccione una celda de fecha/hora válida.")
+        ingreso = cx.execute(
+            "SELECT * FROM pesajes WHERE id_pesaje = ?", (id_pesaje,)
+        ).fetchone()
+        if ingreso is None or ingreso["estado"] == "ANULADO":
+            raise ReglaNegocioError("El ingreso no existe o está anulado.")
+        if ingreso["sincronizado"]:
+            raise ReglaNegocioError(
+                "El ingreso ya fue sincronizado; no se pueden corregir sus pesajes."
+            )
+        lote = cx.execute(
+            "SELECT * FROM pesajes_lotes WHERE id_pesaje_lote = ? AND id_pesaje = ?",
+            (id_lote, id_pesaje),
+        ).fetchone()
+        if lote is None or lote["estado"] == "ANULADO":
+            raise ReglaNegocioError("El lote seleccionado no existe o está anulado.")
+        campo_id = "id_registro_bruto" if tipo == "BRUTO" else "id_registro_tara"
+        id_registro = lote[campo_id]
+        if id_registro is None:
+            raise ReglaNegocioError("La celda seleccionada todavía no tiene una captura.")
+        registro = cx.execute(
+            "SELECT * FROM pesajes_registros WHERE id_registro = ? AND id_pesaje = ?",
+            (id_registro, id_pesaje),
+        ).fetchone()
+        if registro is None or registro["anulado"]:
+            raise ReglaNegocioError("La captura seleccionada ya no está vigente.")
+
+        fecha_anterior = cls._fecha_evento_tx(cx, id_registro)
+        if fecha_nueva == fecha_anterior:
+            raise ReglaNegocioError("La fecha y hora nuevas son iguales a las actuales.")
+        anteriores = cx.execute(
+            "SELECT id_registro FROM pesajes_registros "
+            "WHERE id_pesaje = ? AND anulado = 0 AND secuencia < ? "
+            "ORDER BY secuencia DESC LIMIT 1",
+            (id_pesaje, registro["secuencia"]),
+        ).fetchone()
+        siguientes = cx.execute(
+            "SELECT id_registro FROM pesajes_registros "
+            "WHERE id_pesaje = ? AND anulado = 0 AND secuencia > ? "
+            "ORDER BY secuencia LIMIT 1",
+            (id_pesaje, registro["secuencia"]),
+        ).fetchone()
+        if anteriores and fecha_nueva < cls._fecha_evento_tx(cx, anteriores["id_registro"]):
+            raise ReglaNegocioError("La fecha debe ser posterior a la captura anterior.")
+        if siguientes and fecha_nueva > cls._fecha_evento_tx(cx, siguientes["id_registro"]):
+            raise ReglaNegocioError("La fecha debe ser anterior a la captura siguiente.")
+
+        referencias = cx.execute(
+            """SELECT lote FROM pesajes_lotes
+                WHERE id_pesaje = ? AND estado <> 'ANULADO'
+                  AND (id_registro_bruto = ? OR id_registro_tara = ?)
+                ORDER BY orden""",
+            (id_pesaje, id_registro, id_registro),
+        ).fetchall()
+        peso_actual = cls._peso_evento_tx(cx, id_registro)
+        return {
+            "id_registro": id_registro, "tipo": tipo,
+            "lote_seleccionado": lote["lote"],
+            "fecha_hora_anterior": fecha_anterior,
+            "fecha_hora_nueva": fecha_nueva,
+            "peso_actual": peso_actual,
+            "secuencia": registro["secuencia"],
+            "afectados": [
+                {"lote": ref["lote"], "fecha_anterior": fecha_anterior,
+                 "fecha_nueva": fecha_nueva} for ref in referencias
+            ],
+        }
+
+    @classmethod
+    def previsualizar_correccion_fecha(cls, id_pesaje, id_lote, tipo, fecha_hora):
+        fecha_nueva = cls._normalizar_fecha_hora(fecha_hora)
+        with transaccion() as cx:
+            return cls._preparar_correccion_fecha_tx(
+                cx, id_pesaje, id_lote, tipo, fecha_nueva
+            )
+
+    @classmethod
+    def corregir_fecha_pesaje(cls, id_pesaje, id_lote, tipo, fecha_hora, motivo):
+        motivo = (motivo or "").strip()
+        if not motivo:
+            raise ReglaNegocioError("Indique el motivo de la corrección.")
+        fecha_nueva = cls._normalizar_fecha_hora(fecha_hora)
+        with transaccion() as cx:
+            datos = cls._preparar_correccion_fecha_tx(
+                cx, id_pesaje, id_lote, tipo, fecha_nueva
+            )
+            cx.execute(
+                """INSERT INTO historial_correcciones_pesaje
+                   (id_pesaje, id_registro, id_pesaje_lote, tipo,
+                    peso_anterior, peso_nuevo, fecha_hora_anterior,
+                    fecha_hora_nueva, motivo, fecha_hora)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (id_pesaje, datos["id_registro"], id_lote, datos["tipo"],
+                 datos["peso_actual"], datos["peso_actual"],
+                 datos["fecha_hora_anterior"], datos["fecha_hora_nueva"],
+                 motivo, ahora()),
+            )
+        return datos
 
     @classmethod
     def previsualizar_correccion_pesaje(cls, id_pesaje, id_lote, tipo, peso):
@@ -865,7 +1010,7 @@ class PesajeService:
         """
 
         def fecha(valor):
-            return valor.replace("T", " ") if valor else ""
+            return cls.formatear_fecha_hora(valor)
 
         def texto(valor):
             return "" if valor is None else valor

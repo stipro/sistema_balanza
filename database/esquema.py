@@ -6,7 +6,7 @@ from database.conexion import obtener_conexion, transaccion
 
 # Súbelo cuando cambies el esquema. Si la BD existente tiene otra versión,
 # inicializar_base_datos() avisa en lugar de dejar tablas viejas a medias.
-VERSION_ESQUEMA = 5
+VERSION_ESQUEMA = 6
 
 _AHORA_SQL = "strftime('%Y-%m-%dT%H:%M:%S','now','localtime')"
 
@@ -169,6 +169,8 @@ DDL_HISTORIAL_CORRECCIONES_PESAJE = """
         tipo TEXT NOT NULL CHECK (tipo IN ('BRUTO', 'TARA')),
         peso_anterior INTEGER NOT NULL CHECK (peso_anterior > 0),
         peso_nuevo INTEGER NOT NULL CHECK (peso_nuevo > 0),
+        fecha_hora_anterior TEXT,
+        fecha_hora_nueva TEXT,
         motivo TEXT NOT NULL CHECK (length(trim(motivo)) > 0),
         fecha_hora TEXT NOT NULL,
         FOREIGN KEY (id_pesaje) REFERENCES pesajes(id_pesaje),
@@ -245,14 +247,26 @@ VISTA_LOTES = """
               ORDER BY hc.id_correccion DESC LIMIT 1),
             rb.peso
         ) AS peso_bruto,
-        rb.fecha_hora AS fecha_bruto,
+        COALESCE(
+            (SELECT hc.fecha_hora_nueva FROM historial_correcciones_pesaje hc
+              WHERE hc.id_registro = rb.id_registro
+                AND hc.fecha_hora_nueva IS NOT NULL
+              ORDER BY hc.id_correccion DESC LIMIT 1),
+            rb.fecha_hora
+        ) AS fecha_bruto,
         COALESCE(
             (SELECT hc.peso_nuevo FROM historial_correcciones_pesaje hc
               WHERE hc.id_registro = rt.id_registro
               ORDER BY hc.id_correccion DESC LIMIT 1),
             rt.peso
         ) AS peso_tara,
-        rt.fecha_hora AS fecha_tara,
+        COALESCE(
+            (SELECT hc.fecha_hora_nueva FROM historial_correcciones_pesaje hc
+              WHERE hc.id_registro = rt.id_registro
+                AND hc.fecha_hora_nueva IS NOT NULL
+              ORDER BY hc.id_correccion DESC LIMIT 1),
+            rt.fecha_hora
+        ) AS fecha_tara,
         CASE
             WHEN rb.peso IS NOT NULL AND rt.peso IS NOT NULL
             THEN COALESCE(

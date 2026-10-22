@@ -130,6 +130,58 @@ def migrar_esquema_v4_a_v5(ruta):
         conexion.close()
 
 
+
+def migrar_esquema_v5_a_v6(ruta):
+    """Añade campos auditables para corregir fecha/hora de capturas."""
+    tablas, version = inspeccionar_esquema(ruta)
+    if version != 5 or "historial_correcciones_pesaje" not in tablas:
+        return
+
+    marca_tiempo = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    respaldo = ruta.with_name(f"{ruta.stem}.backup-v5-{marca_tiempo}{ruta.suffix}")
+    origen = sqlite3.connect(str(ruta), timeout=10)
+    copia = sqlite3.connect(str(respaldo), timeout=10)
+    try:
+        origen.backup(copia)
+    except BaseException:
+        copia.close()
+        respaldo.unlink(missing_ok=True)
+        raise
+    finally:
+        origen.close()
+        copia.close()
+
+    conexion = sqlite3.connect(str(ruta), timeout=10, isolation_level=None)
+    try:
+        conexion.execute("PRAGMA foreign_keys = ON")
+        conexion.execute("BEGIN IMMEDIATE")
+        columnas = {
+            fila[1] for fila in conexion.execute(
+                "PRAGMA table_info(historial_correcciones_pesaje)"
+            ).fetchall()
+        }
+        if "fecha_hora_anterior" not in columnas:
+            conexion.execute(
+                "ALTER TABLE historial_correcciones_pesaje "
+                "ADD COLUMN fecha_hora_anterior TEXT"
+            )
+        if "fecha_hora_nueva" not in columnas:
+            conexion.execute(
+                "ALTER TABLE historial_correcciones_pesaje "
+                "ADD COLUMN fecha_hora_nueva TEXT"
+            )
+        conexion.execute("DROP VIEW IF EXISTS v_lotes_detalle")
+        conexion.execute(VISTA_LOTES)
+        conexion.execute("PRAGMA user_version = 6")
+        conexion.commit()
+    except BaseException:
+        if conexion.in_transaction:
+            conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+
+
 def preparar_base(ruta, es_nueva=False):
     """Valida una base existente o inicializa una base recién creada."""
     ruta = validar_archivo_sqlite(ruta)
@@ -140,6 +192,7 @@ def preparar_base(ruta, es_nueva=False):
         validar_esquema_existente(ruta)
     else:
         migrar_esquema_v4_a_v5(ruta)
+        migrar_esquema_v5_a_v6(ruta)
         validar_esquema_existente(ruta)
     return ruta
 

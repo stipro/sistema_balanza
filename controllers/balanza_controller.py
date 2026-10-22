@@ -121,6 +121,8 @@ class BalanzaController:
         self.view.tabla_pesajes.itemSelectionChanged.connect(
             self.cargar_lote_seleccionado
         )
+        self.view.tabla_pesajes.itemChanged.connect(self._peso_tabla_editado)
+        self._procesando_edicion_peso = False
 
         # Configuración de lotes
         self.view.configuracion_lotes.btn_guardar.clicked.connect(
@@ -685,8 +687,7 @@ class BalanzaController:
             return
         except Exception as e:
             QMessageBox.critical(
-                self.view,
-                "Error al corregir pesada",
+                self.view, "Error al corregir pesada",
                 f"No se pudo corregir la captura. No se aplicaron cambios.\n\n{e}",
             )
             return
@@ -709,9 +710,7 @@ class BalanzaController:
             + "\n\n¿Desea continuar?"
         )
         respuesta = QMessageBox.question(
-            self.view,
-            "Confirmar corrección de pesada",
-            mensaje,
+            self.view, "Confirmar corrección de pesada", mensaje,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -724,8 +723,7 @@ class BalanzaController:
 
         try:
             resultado = PesajeService.corregir_pesaje(
-                id_pesaje, celda["id_lote"], celda["tipo"],
-                self.ultimo_peso, motivo,
+                id_pesaje, celda["id_lote"], celda["tipo"], self.ultimo_peso, motivo
             )
             self.log(
                 f"[CORRECCIÓN PESO] Captura #{resultado['secuencia']} "
@@ -737,18 +735,140 @@ class BalanzaController:
             self._actualizar_boton_captura_segun_celda()
             self._refrescar_lotes()
             QMessageBox.information(
-                self.view,
-                "Corregir pesada",
+                self.view, "Corregir pesada",
                 "La pesada fue corregida y se recalcularon los pesos netos afectados.",
             )
         except ReglaNegocioError as e:
             QMessageBox.warning(self.view, "Corregir pesada", str(e))
         except Exception as e:
             QMessageBox.critical(
-                self.view,
-                "Error al corregir pesada",
+                self.view, "Error al corregir pesada",
                 f"No se pudo corregir la captura. No se aplicaron cambios.\n\n{e}",
             )
+
+    def _peso_tabla_editado(self, item):
+        """Registra en el historial una edición manual de bruto o tara."""
+        if self._procesando_edicion_peso or item.column() not in (2, 3, 4, 5):
+            return
+        if not self.ingreso_actual:
+            self._refrescar_lotes()
+            return
+
+        celda_lote = self.view.tabla_pesajes.item(item.row(), 0)
+        id_lote = self._mapa_lotes.get(celda_lote.text().strip()) if celda_lote else None
+        if id_lote is None:
+            self._refrescar_lotes()
+            return
+
+        tipo = "BRUTO" if item.column() in (2, 3) else "TARA"
+        es_fecha = item.column() in (2, 4)
+        id_pesaje = self.ingreso_actual["id_pesaje"]
+        valor_nuevo = item.text().strip()
+        try:
+            if es_fecha:
+                previo = PesajeService.previsualizar_correccion_fecha(
+                    id_pesaje, id_lote, tipo, valor_nuevo
+                )
+            else:
+                previo = PesajeService.previsualizar_correccion_pesaje(
+                    id_pesaje, id_lote, tipo, valor_nuevo
+                )
+        except ReglaNegocioError as e:
+            self._procesando_edicion_peso = True
+            try:
+                QMessageBox.warning(self.view, "Corregir pesada", str(e))
+            finally:
+                self._procesando_edicion_peso = False
+                self._refrescar_lotes()
+            return
+        except Exception as e:
+            self._procesando_edicion_peso = True
+            try:
+                QMessageBox.critical(
+                    self.view, "Error al corregir pesada",
+                    f"No se pudo corregir la captura. No se aplicaron cambios.\n\n{e}",
+                )
+            finally:
+                self._procesando_edicion_peso = False
+                self._refrescar_lotes()
+            return
+
+        afectados = []
+        for lote_afectado in previo["afectados"]:
+            linea = f"• Lote {lote_afectado['lote']}"
+            if es_fecha:
+                linea += f": {PesajeService.formatear_fecha_hora(lote_afectado['fecha_nueva'])}"
+            elif lote_afectado["neto_anterior"] is not None:
+                linea += (
+                    f": neto {lote_afectado['neto_anterior']} kg → "
+                    f"{lote_afectado['neto_nuevo']} kg"
+                )
+            afectados.append(linea)
+        if es_fecha:
+            detalle_valor = (
+                f"Fecha/hora actual: {PesajeService.formatear_fecha_hora(previo['fecha_hora_anterior'])}\n"
+                f"Fecha/hora nueva: {PesajeService.formatear_fecha_hora(previo['fecha_hora_nueva'])}"
+            )
+        else:
+            detalle_valor = (
+                f"Peso actual: {previo['peso_anterior']} kg\n"
+                f"Nuevo peso: {previo['peso_nuevo']} kg"
+            )
+        mensaje = (
+            detalle_valor + "\n\nLotes afectados:\n" + "\n".join(afectados)
+            + "\n\n¿Desea guardar esta corrección?"
+        )
+        respuesta = QMessageBox.question(
+            self.view, "Confirmar corrección de pesada", mensaje,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if respuesta != QMessageBox.StandardButton.Yes:
+            self._refrescar_lotes()
+            return
+
+        motivo, ok = self.view.pedir_motivo("Corregir pesada")
+        if not ok or not motivo:
+            self._refrescar_lotes()
+            return
+
+        try:
+            if es_fecha:
+                resultado = PesajeService.corregir_fecha_pesaje(
+                    id_pesaje, id_lote, tipo, valor_nuevo, motivo
+                )
+                detalle = (
+                    f"{resultado['fecha_hora_anterior']} -> "
+                    f"{resultado['fecha_hora_nueva']}"
+                )
+            else:
+                resultado = PesajeService.corregir_pesaje(
+                    id_pesaje, id_lote, tipo, valor_nuevo, motivo
+                )
+                detalle = (
+                    f"{resultado['peso_anterior']} -> {resultado['peso_nuevo']} kg"
+                )
+            self.log(
+                f"[CORRECCIÓN MANUAL] Captura #{resultado['secuencia']} "
+                f"{detalle}. Motivo: {motivo}"
+            )
+            QMessageBox.information(
+                self.view, "Corregir pesada",
+                (
+                    "La fecha y hora fueron actualizadas en los lotes relacionados."
+                    if es_fecha else
+                    "La pesada fue corregida y se recalcularon los pesos netos afectados."
+                ),
+            )
+        except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "Corregir pesada", str(e))
+        except Exception as e:
+            QMessageBox.critical(
+                self.view, "Error al corregir pesada",
+                f"No se pudo corregir la captura. No se aplicaron cambios.\n\n{e}",
+            )
+        finally:
+            self._refrescar_lotes()
 
     def _capturar_nuevo_lote_con_peso(self):
         """
@@ -1254,7 +1374,12 @@ class BalanzaController:
             self.ingreso_actual["id_pesaje"], descendente=True
         )
 
-        self.view.cargar_pesajes(filas)
+        procesando = self._procesando_edicion_peso
+        self._procesando_edicion_peso = True
+        try:
+            self.view.cargar_pesajes(filas)
+        finally:
+            self._procesando_edicion_peso = procesando
 
     def guardar_configuracion_serial(self, *_args):
         """Guarda los puertos y las velocidades para próximas sesiones."""

@@ -721,7 +721,11 @@ class BalanzaView(QMainWindow):
         self.tabla_pesajes.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection
         )
-        self.tabla_pesajes.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tabla_pesajes.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            | QAbstractItemView.EditTrigger.AnyKeyPressed
+        )
         self.tabla_pesajes.setAlternatingRowColors(True)
         self.tabla_pesajes.setMinimumHeight(140)
         self.tabla_pesajes.setMaximumHeight(190)
@@ -884,18 +888,19 @@ class BalanzaView(QMainWindow):
         self.tabla_pesajes.setRowCount(len(filas))
 
         for r, valores in enumerate(filas):
-
             for c, valor in enumerate(valores):
-
                 item = QTableWidgetItem(str(valor))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-                if c in (3, 5) and valor not in (None, ""):
+                if c in (2, 3, 4, 5) and valor not in (None, ""):
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                     item.setToolTip(
-                        "Selecciona esta celda y pulsa CAPTURAR PESO para corregirla. "
+                        "Selecciona y escribe una nueva fecha/hora o un nuevo peso. "
+                        "Para usar la lectura de la balanza, pulsa CAPTURAR PESO. "
                         "El bruto se corrige desde el primer lote; la tara se puede "
-                        "corregir en cualquier lote. Si la captura es compartida, "
-                        "también se actualiza el peso relacionado del lote siguiente."
+                        "corregir en cualquier lote. Si la captura está compartida, "
+                        "el cambio también se refleja en el lote siguiente."
                     )
 
                 if c == 7:
