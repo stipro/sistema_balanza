@@ -12,6 +12,7 @@ anular) están en services/pesaje_service.py.
 """
 
 from datetime import datetime
+import re
 
 from config.settings import TICKET_INICIAL
 from database.conexion import ahora, lectura, transaccion
@@ -673,27 +674,49 @@ class ConfiguracionLotesModel:
         return dict(fila) if fila else None
 
     @classmethod
-    def guardar(cls, correlativo, conexion=None):
-        """Crea o actualiza el próximo correlativo."""
+    def guardar(cls, correlativo, conexion=None, prefijo=None):
+        """Crea o actualiza el prefijo y el próximo correlativo."""
 
         if not isinstance(correlativo, int) or correlativo <= 0:
             raise ReglaNegocioError(
                 "El correlativo debe ser un número entero mayor que cero."
             )
 
+        prefijo = str(prefijo or cls.prefijo()).strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{1,20}", prefijo):
+            raise ReglaNegocioError(
+                "El prefijo debe tener entre 1 y 20 letras o números, sin espacios ni guiones."
+            )
+
         t = ahora()
 
         with transaccion(conexion) as cx:
+            sufijos_existentes = []
+            for fila in cx.execute(
+                "SELECT lote FROM pesajes_lotes WHERE lote LIKE ?",
+                (f"{prefijo}-%",),
+            ).fetchall():
+                match = re.fullmatch(rf"{re.escape(prefijo)}-(\d+)", fila["lote"])
+                if match:
+                    sufijos_existentes.append(int(match.group(1)))
+
+            if sufijos_existentes and correlativo <= max(sufijos_existentes):
+                raise ReglaNegocioError(
+                    f"El prefijo {prefijo} ya tiene lotes hasta el correlativo "
+                    f"{max(sufijos_existentes)}. El siguiente debe ser mayor."
+                )
+
             cx.execute(
                 """
                 INSERT INTO configuracion_lotes
-                    (id_configuracion, proximo_correlativo, created_at, updated_at)
-                VALUES (1, ?, ?, ?)
+                    (id_configuracion, prefijo, proximo_correlativo, created_at, updated_at)
+                VALUES (1, ?, ?, ?, ?)
                 ON CONFLICT(id_configuracion) DO UPDATE SET
+                    prefijo = excluded.prefijo,
                     proximo_correlativo = excluded.proximo_correlativo,
                     updated_at = excluded.updated_at
                 """,
-                (correlativo, t, t),
+                (prefijo, correlativo, t, t),
             )
 
     @staticmethod
@@ -712,7 +735,8 @@ class ConfiguracionLotesModel:
         if config is None:
             return None
 
-        return f"{cls.prefijo()}-{config['proximo_correlativo']}"
+        prefijo = str(config.get("prefijo") or "").strip() or cls.prefijo()
+        return f"{prefijo}-{config['proximo_correlativo']}"
 
     @classmethod
     def consumir_correlativo(cls, conexion):

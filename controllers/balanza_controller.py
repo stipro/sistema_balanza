@@ -342,10 +342,11 @@ class BalanzaController:
         """
 
         correlativo = self.view.configuracion_lotes.spin_correlativo.value()
+        prefijo = self.view.configuracion_lotes.txt_prefijo.text().strip()
 
         try:
 
-            ConfiguracionLotesModel.guardar(correlativo)
+            ConfiguracionLotesModel.guardar(correlativo, prefijo=prefijo)
 
             self.view.configuracion_lotes.ocultar_aviso()
 
@@ -383,7 +384,7 @@ class BalanzaController:
         else:
 
             self.view.configuracion_lotes.cargar_correlativo(
-                config["proximo_correlativo"]
+                config["proximo_correlativo"], config.get("prefijo")
             )
 
         self.view.configuracion_lotes.exec()

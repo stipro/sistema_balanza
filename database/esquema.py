@@ -6,7 +6,7 @@ from database.conexion import obtener_conexion, transaccion
 
 # Súbelo cuando cambies el esquema. Si la BD existente tiene otra versión,
 # inicializar_base_datos() avisa en lugar de dejar tablas viejas a medias.
-VERSION_ESQUEMA = 8
+VERSION_ESQUEMA = 9
 
 _AHORA_SQL = "strftime('%Y-%m-%dT%H:%M:%S','now','localtime')"
 
@@ -60,6 +60,7 @@ MAESTROS = [
 DDL_CONFIGURACION_LOTES = """
     CREATE TABLE IF NOT EXISTS configuracion_lotes (
         id_configuracion INTEGER PRIMARY KEY CHECK (id_configuracion = 1),
+        prefijo TEXT,
         proximo_correlativo INTEGER NOT NULL CHECK (proximo_correlativo > 0),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL

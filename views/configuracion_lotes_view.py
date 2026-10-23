@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QGroupBox,
     QFormLayout,
+    QLineEdit,
 )
 from PyQt6.QtCore import Qt
 
@@ -18,7 +19,7 @@ class ConfiguracionLotesView(QDialog):
 
         self.setWindowTitle("Configuración de lotes")
         self.setModal(True)
-        self.resize(450, 320)
+        self.resize(480, 340)
 
         self.crear_interfaz()
 
@@ -29,8 +30,8 @@ class ConfiguracionLotesView(QDialog):
         self.lbl_titulo.setObjectName("titulo")
 
         self.lbl_descripcion = QLabel(
-            "Configure el número correlativo inicial para "
-            "la generación automática de lotes."
+            "Configure el prefijo y el correlativo para los próximos lotes. "
+            "Los lotes existentes no se modificarán. Use letras o números, sin guiones."
         )
         self.lbl_descripcion.setWordWrap(True)
 
@@ -46,11 +47,12 @@ class ConfiguracionLotesView(QDialog):
         self.spin_correlativo.setValue(1500)
         self.spin_correlativo.setMinimumWidth(180)
 
-        # PREFIJO
-        self.txt_prefijo = QLabel("—")
+        # PREFIJO EDITABLE
+        self.txt_prefijo = QLineEdit(self.obtener_prefijo_actual())
+        self.txt_prefijo.setMaxLength(20)
         self.txt_prefijo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.txt_prefijo.setMinimumWidth(180)
-        self.txt_prefijo.setObjectName("campo_solo_lectura")
+        self.txt_prefijo.setPlaceholderText("Ejemplo: 610 o MINA")
 
         # PRÓXIMO LOTE
         self.txt_proximo_lote = QLabel("—")
@@ -64,7 +66,7 @@ class ConfiguracionLotesView(QDialog):
 
         formulario.addRow("Próximo correlativo:", self.spin_correlativo)
 
-        formulario.addRow("Prefijo automático:", self.txt_prefijo)
+        formulario.addRow("Prefijo del lote:", self.txt_prefijo)
 
         formulario.addRow("Próximo lote:", self.txt_proximo_lote)
 
@@ -96,6 +98,7 @@ class ConfiguracionLotesView(QDialog):
 
         # EVENTOS
         self.spin_correlativo.valueChanged.connect(self.actualizar_preview)
+        self.txt_prefijo.textChanged.connect(self.actualizar_preview)
 
         self.btn_cancelar.clicked.connect(self.reject)
 
@@ -106,9 +109,9 @@ class ConfiguracionLotesView(QDialog):
 
         correlativo = self.spin_correlativo.value()
 
-        prefijo = self.obtener_prefijo_actual()
-
-        self.txt_prefijo.setText(prefijo)
+        prefijo = self.txt_prefijo.text().strip().upper()
+        if not prefijo:
+            prefijo = self.obtener_prefijo_actual()
 
         self.txt_proximo_lote.setText(f"{prefijo}-{correlativo}")
 
@@ -139,11 +142,12 @@ class ConfiguracionLotesView(QDialog):
         self.lbl_aviso.hide()
 
     # CARGAR CONFIGURACIÓN EXISTENTE
-    def cargar_correlativo(self, correlativo):
+    def cargar_correlativo(self, correlativo, prefijo=None):
 
         if correlativo is None:
             self.mostrar_sin_configuracion()
             return
 
         self.spin_correlativo.setValue(correlativo)
+        self.txt_prefijo.setText(prefijo or self.obtener_prefijo_actual())
         self.ocultar_aviso()

@@ -274,6 +274,49 @@ def migrar_esquema_v7_a_v8(ruta):
         conexion.close()
 
 
+def migrar_esquema_v8_a_v9(ruta):
+    """Agrega el prefijo configurable del correlativo de lotes."""
+    tablas, version = inspeccionar_esquema(ruta)
+    if version != 8 or "configuracion_lotes" not in tablas:
+        return
+
+    marca_tiempo = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    respaldo = ruta.with_name(f"{ruta.stem}.backup-v8-{marca_tiempo}{ruta.suffix}")
+    origen = sqlite3.connect(str(ruta), timeout=10)
+    copia = sqlite3.connect(str(respaldo), timeout=10)
+    try:
+        origen.backup(copia)
+    except BaseException:
+        copia.close()
+        respaldo.unlink(missing_ok=True)
+        raise
+    finally:
+        origen.close()
+        copia.close()
+
+    conexion = sqlite3.connect(str(ruta), timeout=10, isolation_level=None)
+    try:
+        conexion.execute("PRAGMA foreign_keys = ON")
+        conexion.execute("BEGIN IMMEDIATE")
+        columnas = {
+            fila[1] for fila in conexion.execute(
+                "PRAGMA table_info(configuracion_lotes)"
+            ).fetchall()
+        }
+        if "prefijo" not in columnas:
+            conexion.execute(
+                "ALTER TABLE configuracion_lotes ADD COLUMN prefijo TEXT"
+            )
+        conexion.execute("PRAGMA user_version = 9")
+        conexion.commit()
+    except BaseException:
+        if conexion.in_transaction:
+            conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+
+
 def preparar_base(ruta, es_nueva=False):
     """Valida una base existente o inicializa una base recién creada."""
     ruta = validar_archivo_sqlite(ruta)
@@ -287,6 +330,7 @@ def preparar_base(ruta, es_nueva=False):
         migrar_esquema_v5_a_v6(ruta)
         migrar_esquema_v6_a_v7(ruta)
         migrar_esquema_v7_a_v8(ruta)
+        migrar_esquema_v8_a_v9(ruta)
         validar_esquema_existente(ruta)
     return ruta
 
