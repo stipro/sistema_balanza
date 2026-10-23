@@ -2011,6 +2011,30 @@ class BalanzaController:
             return
 
         try:
+            ingreso = PesajeModel.by_id(self.ingreso_actual["id_pesaje"])
+            conductor = ConductorModel.by_id(ingreso["id_conductor"]) if ingreso else None
+            if conductor is None:
+                QMessageBox.warning(
+                    self.view, "DJ de traslado",
+                    "La operación no tiene un conductor asociado.",
+                )
+                return
+
+            domicilio = str(conductor.get("domicilio") or "").strip()
+            domicilio, domicilio_ok = QInputDialog.getText(
+                self.view,
+                "Domicilio del conductor",
+                f"Domicilio que figura en el DNI de {conductor['nombre']}: ",
+                text=domicilio,
+            )
+            if not domicilio_ok:
+                return
+            domicilio = domicilio.strip()
+            if domicilio != str(conductor.get("domicilio") or "").strip():
+                ConductorModel.update_by_id(
+                    conductor["id_conductor"], {"domicilio": domicilio}
+                )
+
             datos = PesajeService.preparar_datos_declaracion_jurada(
                 self.ingreso_actual["id_pesaje"], proveedor
             )

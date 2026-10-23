@@ -189,7 +189,7 @@ class CarretaModel(MaestroModelo):
 class ConductorModel(MaestroModelo):
     tabla = "conductores"
     pk = "id_conductor"
-    columnas = ("nombre", "dni", "brevete", "id_externo", "activo")
+    columnas = ("nombre", "dni", "brevete", "domicilio", "id_externo", "activo")
     campos_vista = ("nombre", "brevete")
     campo_orden = "nombre"
 
@@ -218,12 +218,18 @@ class ConductorModel(MaestroModelo):
 
                 id_remoto = registro.get("id_conductor")
                 nombre = str(registro.get("nombre_conductor") or "").strip()
-                dni = str(registro.get("numero_documento") or "").strip() or None
+                licencia_api = str(registro.get("numero_licencia") or "").strip()
+                dni_api = str(registro.get("numero_documento") or "").strip()
+                dni = (
+                    licencia_api[1:]
+                    if licencia_api[:1].isalpha()
+                    else dni_api or None
+                )
 
                 # La licencia puede ser NULL en MySQL, pero la columna local
                 # brevete es NOT NULL. Como respaldo usamos el documento.
                 brevete = str(
-                    registro.get("numero_licencia")
+                    licencia_api
                     or registro.get("numero_documento")
                     or ""
                 ).strip()

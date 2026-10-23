@@ -1039,6 +1039,12 @@ class PesajeService:
             return ", ".join(salida)
 
         primer_lote = lotes_proveedor[0]
+        brevete = texto(primer_lote.get("brevete"))
+        dni_chofer = (
+            brevete[1:]
+            if brevete[:1].isalpha()
+            else texto(primer_lote.get("dni_chofer"))
+        )
         detalle = []
         for lote in lotes_proveedor:
             detalle.append({
@@ -1064,8 +1070,9 @@ class PesajeService:
             "transportista": texto(primer_lote.get("transportista")),
             "transportista_ruc": texto(primer_lote.get("ruc_transportista")),
             "chofer": texto(primer_lote.get("chofer")),
-            "dni_chofer": texto(primer_lote.get("dni_chofer")),
-            "brevete": texto(primer_lote.get("brevete")),
+            "dni_chofer": dni_chofer,
+            "brevete": brevete,
+            "domicilio_dni": texto(primer_lote.get("domicilio_chofer")),
             "placa": texto(primer_lote.get("placa")),
             "carreta": texto(primer_lote.get("carreta")),
             "vehiculo_placas": " / ".join(
@@ -1078,7 +1085,6 @@ class PesajeService:
             "codigo_concesion": valores_unicos("codigo_concesion"),
             "procedencia": valores_unicos("procedencia"),
             "guias_proveedor": valores_unicos("guia_proveedor"),
-            "domicilio_dni": "",
             "direccion_empresa": (
                 "EL BOSQUE JS SECTOR PAMPA LA AGUADA, distrito de Chala, "
                 "provincia de Caravelí, departamento de Arequipa"
