@@ -1002,6 +1002,97 @@ class PesajeService:
         }
 
     @classmethod
+    def preparar_datos_declaracion_jurada(cls, id_pesaje, proveedor):
+        """Prepara una DJ con todos los lotes completados de un proveedor."""
+        proveedor = (proveedor or "").strip()
+        lotes_proveedor = [
+            lote for lote in PesajeLoteModel.detalle(id_pesaje, descendente=False)
+            if str(lote.get("proveedor") or "").strip() == proveedor
+        ]
+        if not lotes_proveedor:
+            raise ReglaNegocioError("El proveedor no tiene lotes en esta operación.")
+
+        incompletos = [
+            lote["lote"] for lote in lotes_proveedor
+            if lote.get("estado") != "COMPLETADO"
+            or any(lote.get(campo) is None for campo in
+                   ("peso_bruto", "peso_tara", "peso_neto", "fecha_bruto", "fecha_tara"))
+        ]
+        if incompletos:
+            raise ReglaNegocioError(
+                "Complete las pesadas antes de generar la DJ. Lotes pendientes: "
+                + ", ".join(incompletos)
+            )
+
+        def texto(valor):
+            return "" if valor is None else str(valor).strip()
+
+        def valores_unicos(campo):
+            vistos = set()
+            salida = []
+            for lote in lotes_proveedor:
+                valor = texto(lote.get(campo))
+                clave = valor.casefold()
+                if valor and clave not in vistos:
+                    salida.append(valor)
+                    vistos.add(clave)
+            return ", ".join(salida)
+
+        primer_lote = lotes_proveedor[0]
+        detalle = []
+        for lote in lotes_proveedor:
+            detalle.append({
+                "lote": texto(lote.get("lote")),
+                "concesion": texto(lote.get("concesion")),
+                "procedencia": texto(lote.get("procedencia")),
+                "guia_proveedor": texto(lote.get("guia_proveedor")),
+                "guia_transportista": texto(lote.get("guia_transportista")),
+                "tipo_carga": texto(lote.get("tipo_carga")),
+                "cantidad_sacos": lote.get("cantidad_sacos"),
+                "fecha_bruto": texto(lote.get("fecha_bruto")),
+                "fecha_tara": texto(lote.get("fecha_tara")),
+                "peso_bruto": lote.get("peso_bruto"),
+                "peso_tara": lote.get("peso_tara"),
+                "peso_neto": lote.get("peso_neto"),
+            })
+
+        return {
+            "ticket": texto(primer_lote.get("ticket")),
+            "fecha_emision": ahora(),
+            "proveedor": proveedor,
+            "proveedor_ruc": texto(primer_lote.get("ruc_proveedor")),
+            "transportista": texto(primer_lote.get("transportista")),
+            "transportista_ruc": texto(primer_lote.get("ruc_transportista")),
+            "chofer": texto(primer_lote.get("chofer")),
+            "dni_chofer": texto(primer_lote.get("dni_chofer")),
+            "brevete": texto(primer_lote.get("brevete")),
+            "placa": texto(primer_lote.get("placa")),
+            "carreta": texto(primer_lote.get("carreta")),
+            "vehiculo_placas": " / ".join(
+                valor for valor in (
+                    texto(primer_lote.get("placa")),
+                    texto(primer_lote.get("carreta")),
+                ) if valor
+            ),
+            "concesion": valores_unicos("concesion"),
+            "codigo_concesion": valores_unicos("codigo_concesion"),
+            "procedencia": valores_unicos("procedencia"),
+            "guias_proveedor": valores_unicos("guia_proveedor"),
+            "domicilio_dni": "",
+            "direccion_empresa": (
+                "EL BOSQUE JS SECTOR PAMPA LA AGUADA, distrito de Chala, "
+                "provincia de Caravelí, departamento de Arequipa"
+            ),
+            "lotes": detalle,
+            "total_neto": sum(float(lote["peso_neto"]) for lote in detalle),
+            "total_tmh": sum(float(lote["peso_neto"]) for lote in detalle) / 1000,
+            "total_sacos": sum(
+                int(lote["cantidad_sacos"] or 0) for lote in detalle
+                if lote["tipo_carga"].upper() == "SACO"
+            ),
+        }
+
+    @classmethod
     def filas_para_tabla(cls, id_pesaje, descendente=False):
         """
         Tuplas de 8 valores para view.cargar_pesajes():

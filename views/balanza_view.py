@@ -365,6 +365,7 @@ class BalanzaView(QMainWindow):
         self.btn_nuevo = self._boton("＋  NUEVO")
         self.btn_guardar = self._boton("💾  GUARDAR", 45, "btn_guardar")
         self.btn_imprimir = self._boton("🖨  IMPRIMIR")
+        self.btn_declaracion_jurada = self._boton("📄  DJ TRASLADO")
         self.btn_modificar = self._boton("✎  MODIFICAR")
         self.btn_eliminar_lote = self._boton("🗑  ELIMINAR LOTE")
         self.btn_eliminar_ticket = self._boton("🗑  ELIMINAR TICKET")
@@ -375,6 +376,7 @@ class BalanzaView(QMainWindow):
         acciones.addWidget(self.btn_nuevo)
         acciones.addWidget(self.btn_guardar, 1)
         acciones.addWidget(self.btn_imprimir)
+        acciones.addWidget(self.btn_declaracion_jurada)
         acciones.addWidget(self.btn_modificar)
         acciones.addWidget(self.btn_eliminar_lote)
         acciones.addWidget(self.btn_eliminar_ticket)
@@ -697,6 +699,10 @@ class BalanzaView(QMainWindow):
         layout = QVBoxLayout(grupo)
 
         self.tabla_pesajes = QTableWidget()
+        self._proveedores_colapsados = set()
+        self._grupos_proveedor_por_fila = {}
+        self._filas_por_grupo_proveedor = {}
+        self.tabla_pesajes.cellClicked.connect(self._alternar_grupo_proveedor)
 
         self.tabla_pesajes.setColumnCount(8)
         self.tabla_pesajes.setHorizontalHeaderLabels(
@@ -879,39 +885,101 @@ class BalanzaView(QMainWindow):
         self.configuracion.log(texto)
 
     # TABLA DE PESAJES
-    def cargar_pesajes(self, filas):
-        """
-        filas: lista de tuplas de 8 valores:
-        (lote, sacos, fecha_hora_1, peso_1, fecha_hora_2, peso_2, neto, estado)
-        """
+    def cargar_pesajes(self, filas, proveedores=None):
+        """Carga los lotes agrupados y contraíbles por proveedor."""
+        if proveedores is None or len(proveedores) != len(filas):
+            proveedores = ["Sin proveedor"] * len(filas)
 
-        self.tabla_pesajes.setRowCount(len(filas))
+        grupos = {}
+        for valores, proveedor in zip(filas, proveedores):
+            nombre = str(proveedor or "Sin proveedor").strip() or "Sin proveedor"
+            grupos.setdefault(nombre, []).append(valores)
 
-        for r, valores in enumerate(filas):
-            for c, valor in enumerate(valores):
-                item = QTableWidgetItem(str(valor))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        total_filas = sum(len(lotes) + 1 for lotes in grupos.values())
+        tabla = self.tabla_pesajes
+        for fila_anterior in range(tabla.rowCount()):
+            tabla.setRowHidden(fila_anterior, False)
+        tabla.clearSpans()
+        tabla.clearContents()
+        tabla.setRowCount(total_filas)
+        self._grupos_proveedor_por_fila = {}
+        self._filas_por_grupo_proveedor = {}
 
-                if c in (2, 3, 4, 5) and valor not in (None, ""):
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-                    item.setToolTip(
-                        "Selecciona y escribe una nueva fecha/hora o un nuevo peso. "
-                        "Para usar la lectura de la balanza, pulsa CAPTURAR PESO. "
-                        "El bruto se corrige desde el primer lote; la tara se puede "
-                        "corregir en cualquier lote. Si la captura está compartida, "
-                        "el cambio también se refleja en el lote siguiente."
-                    )
+        fila = 0
+        for proveedor, lotes in grupos.items():
+            fila_grupo = fila
+            self._grupos_proveedor_por_fila[fila_grupo] = proveedor
+            filas_lotes = list(range(fila_grupo + 1, fila_grupo + 1 + len(lotes)))
+            self._filas_por_grupo_proveedor[proveedor] = filas_lotes
 
-                if c == 7:
-                    color = "#15803d" if str(valor) == "COMPLETO" else "#b45309"
-                    item.setForeground(QColor(color))
+            contraido = proveedor in self._proveedores_colapsados
+            simbolo = "+" if contraido else "−"
+            encabezado = QTableWidgetItem(
+                f"{simbolo}  {proveedor}  ·  {len(lotes)} lote(s)"
+            )
+            encabezado.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            encabezado.setForeground(QColor("#ffffff"))
+            encabezado.setBackground(QColor("#334155"))
+            encabezado.setTextAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            fuente = encabezado.font()
+            fuente.setBold(True)
+            encabezado.setFont(fuente)
+            encabezado.setToolTip("Haz clic para contraer o expandir los lotes de este proveedor")
+            tabla.setItem(fila_grupo, 0, encabezado)
+            tabla.setSpan(fila_grupo, 0, 1, 8)
+            tabla.setRowHeight(fila_grupo, 28)
+            if contraido:
+                for fila_lote in filas_lotes:
+                    tabla.setRowHidden(fila_lote, True)
 
-                    fuente = item.font()
-                    fuente.setBold(True)
-                    item.setFont(fuente)
+            fila += 1
+            for valores in lotes:
+                for columna, valor in enumerate(valores):
+                    item = QTableWidgetItem(str(valor))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-                self.tabla_pesajes.setItem(r, c, item)
+                    if columna in (2, 3, 4, 5) and valor not in (None, ""):
+                        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+                        item.setToolTip(
+                            "Selecciona y escribe una nueva fecha/hora o un nuevo peso. "
+                            "Para usar la lectura de la balanza, pulsa CAPTURAR PESO. "
+                            "El bruto se corrige desde el primer lote; la tara se puede "
+                            "corregir en cualquier lote. Si la captura está compartida, "
+                            "el cambio también se refleja en el lote siguiente."
+                        )
+
+                    if columna == 7:
+                        color = "#15803d" if str(valor) == "COMPLETO" else "#b45309"
+                        item.setForeground(QColor(color))
+                        fuente = item.font()
+                        fuente.setBold(True)
+                        item.setFont(fuente)
+
+                    tabla.setItem(fila, columna, item)
+                fila += 1
+
+    def _alternar_grupo_proveedor(self, fila, _columna):
+        proveedor = self._grupos_proveedor_por_fila.get(fila)
+        if proveedor is None:
+            return
+
+        contraer = proveedor not in self._proveedores_colapsados
+        if contraer:
+            self._proveedores_colapsados.add(proveedor)
+        else:
+            self._proveedores_colapsados.discard(proveedor)
+
+        simbolo = "+" if contraer else "−"
+        encabezado = self.tabla_pesajes.item(fila, 0)
+        if encabezado:
+            cantidad = len(self._filas_por_grupo_proveedor[proveedor])
+            encabezado.setText(f"{simbolo}  {proveedor}  ·  {cantidad} lote(s)")
+
+        for fila_lote in self._filas_por_grupo_proveedor[proveedor]:
+            self.tabla_pesajes.setRowHidden(fila_lote, contraer)
 
     # MAESTROS
     def cargar_maestros(

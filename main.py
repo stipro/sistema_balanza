@@ -118,6 +118,7 @@ def migrar_esquema_v4_a_v5(ruta):
             "CREATE INDEX IF NOT EXISTS ix_correcciones_registro "
             "ON historial_correcciones_pesaje(id_registro, id_correccion)"
         )
+        _asegurar_columna_dni_conductor(conexion)
         conexion.execute("DROP VIEW IF EXISTS v_lotes_detalle")
         conexion.execute(VISTA_LOTES)
         conexion.execute("PRAGMA user_version = 5")
@@ -170,9 +171,61 @@ def migrar_esquema_v5_a_v6(ruta):
                 "ALTER TABLE historial_correcciones_pesaje "
                 "ADD COLUMN fecha_hora_nueva TEXT"
             )
+        _asegurar_columna_dni_conductor(conexion)
         conexion.execute("DROP VIEW IF EXISTS v_lotes_detalle")
         conexion.execute(VISTA_LOTES)
         conexion.execute("PRAGMA user_version = 6")
+        conexion.commit()
+    except BaseException:
+        if conexion.in_transaction:
+            conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+
+
+def _asegurar_columna_dni_conductor(conexion):
+    """Añade el DNI sin alterar las filas de conductores existentes."""
+    existe = conexion.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='conductores'"
+    ).fetchone()
+    if not existe:
+        return
+    columnas = {
+        fila[1] for fila in conexion.execute("PRAGMA table_info(conductores)")
+    }
+    if "dni" not in columnas:
+        conexion.execute("ALTER TABLE conductores ADD COLUMN dni TEXT")
+
+
+def migrar_esquema_v6_a_v7(ruta):
+    """Agrega el DNI del conductor, con copia de seguridad previa."""
+    tablas, version = inspeccionar_esquema(ruta)
+    if version != 6 or "conductores" not in tablas:
+        return
+
+    marca_tiempo = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    respaldo = ruta.with_name(f"{ruta.stem}.backup-v6-{marca_tiempo}{ruta.suffix}")
+    origen = sqlite3.connect(str(ruta), timeout=10)
+    copia = sqlite3.connect(str(respaldo), timeout=10)
+    try:
+        origen.backup(copia)
+    except BaseException:
+        copia.close()
+        respaldo.unlink(missing_ok=True)
+        raise
+    finally:
+        origen.close()
+        copia.close()
+
+    conexion = sqlite3.connect(str(ruta), timeout=10, isolation_level=None)
+    try:
+        conexion.execute("PRAGMA foreign_keys = ON")
+        conexion.execute("BEGIN IMMEDIATE")
+        _asegurar_columna_dni_conductor(conexion)
+        conexion.execute("DROP VIEW IF EXISTS v_lotes_detalle")
+        conexion.execute(VISTA_LOTES)
+        conexion.execute("PRAGMA user_version = 7")
         conexion.commit()
     except BaseException:
         if conexion.in_transaction:
@@ -193,6 +246,7 @@ def preparar_base(ruta, es_nueva=False):
     else:
         migrar_esquema_v4_a_v5(ruta)
         migrar_esquema_v5_a_v6(ruta)
+        migrar_esquema_v6_a_v7(ruta)
         validar_esquema_existente(ruta)
     return ruta
 

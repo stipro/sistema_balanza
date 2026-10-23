@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QTimer, QSettings
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox, QInputDialog
 
 import serial
 import serial.tools.list_ports
@@ -113,6 +113,7 @@ class BalanzaController:
         self.view.btn_capturar.clicked.connect(self.capturar_peso)
         self.view.btn_guardar.clicked.connect(self.guardar_ingreso)
         self.view.btn_imprimir.clicked.connect(self.imprimir_lote)
+        self.view.btn_declaracion_jurada.clicked.connect(self.generar_declaracion_jurada)
         self.view.btn_modificar.clicked.connect(self.modificar_lote_seleccionado)
         self.view.btn_eliminar_lote.clicked.connect(self.eliminar_lote_seleccionado)
         self.view.btn_eliminar_ticket.clicked.connect(self.eliminar_ticket_actual)
@@ -1376,8 +1377,9 @@ class BalanzaController:
 
         procesando = self._procesando_edicion_peso
         self._procesando_edicion_peso = True
+        proveedores = [d.get("proveedor") for d in detalle]
         try:
-            self.view.cargar_pesajes(filas)
+            self.view.cargar_pesajes(filas, proveedores)
         finally:
             self._procesando_edicion_peso = procesando
 
@@ -1981,6 +1983,55 @@ class BalanzaController:
         self.view.bloquear_configuracion(False)
 
     # LOG
+    def generar_declaracion_jurada(self):
+        """Genera una declaración jurada para un proveedor de la operación."""
+        if not self.ingreso_actual:
+            QMessageBox.information(
+                self.view, "DJ de traslado", "Primero abra o cree una operación."
+            )
+            return
+
+        detalle = PesajeService.lotes_detalle(self.ingreso_actual["id_pesaje"])
+        proveedores = list(dict.fromkeys(
+            str(lote.get("proveedor") or "").strip()
+            for lote in detalle if str(lote.get("proveedor") or "").strip()
+        ))
+        if not proveedores:
+            QMessageBox.information(
+                self.view, "DJ de traslado",
+                "La operación todavía no tiene lotes asociados a un proveedor.",
+            )
+            return
+
+        proveedor, ok = QInputDialog.getItem(
+            self.view, "DJ de traslado", "Seleccione el proveedor:",
+            proveedores, 0, False,
+        )
+        if not ok or not proveedor:
+            return
+
+        try:
+            datos = PesajeService.preparar_datos_declaracion_jurada(
+                self.ingreso_actual["id_pesaje"], proveedor
+            )
+            ruta_pdf = ReportePdfService.generar_declaracion_jurada(datos)
+            self.log(
+                f"[DJ TRASLADO] Proveedor {proveedor}; "
+                f"{len(datos['lotes'])} lote(s); PDF: {ruta_pdf}"
+            )
+            QMessageBox.information(
+                self.view, "DJ de traslado generada",
+                f"Se generó la declaración jurada de {proveedor}.\n\n{ruta_pdf}",
+            )
+        except ReglaNegocioError as e:
+            QMessageBox.warning(self.view, "DJ de traslado", str(e))
+        except Exception as e:
+            self.log(f"[ERROR DJ TRASLADO] {proveedor}: {e}")
+            QMessageBox.critical(
+                self.view, "Error al generar DJ",
+                f"No se pudo generar la declaración jurada.\n\n{e}",
+            )
+
     def imprimir_lote(self):
         """Genera el ticket PDF únicamente del lote seleccionado en la tabla."""
         lote_texto = self.view.obtener_fila_lote_seleccionada()

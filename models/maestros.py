@@ -189,7 +189,7 @@ class CarretaModel(MaestroModelo):
 class ConductorModel(MaestroModelo):
     tabla = "conductores"
     pk = "id_conductor"
-    columnas = ("nombre", "brevete", "id_externo", "activo")
+    columnas = ("nombre", "dni", "brevete", "id_externo", "activo")
     campos_vista = ("nombre", "brevete")
     campo_orden = "nombre"
 
@@ -218,6 +218,7 @@ class ConductorModel(MaestroModelo):
 
                 id_remoto = registro.get("id_conductor")
                 nombre = str(registro.get("nombre_conductor") or "").strip()
+                dni = str(registro.get("numero_documento") or "").strip() or None
 
                 # La licencia puede ser NULL en MySQL, pero la columna local
                 # brevete es NOT NULL. Como respaldo usamos el documento.
@@ -241,7 +242,7 @@ class ConductorModel(MaestroModelo):
                 activo = 1 if str(estado).strip() in ("1", "True", "true") and not eliminado else 0
 
                 existente = cx.execute(
-                    f"SELECT {cls.pk}, nombre, brevete, activo, id_externo "
+                    f"SELECT {cls.pk}, nombre, dni, brevete, activo, id_externo "
                     f"FROM {cls.tabla} WHERE id_externo = ?",
                     (id_externo,),
                 ).fetchone()
@@ -250,13 +251,14 @@ class ConductorModel(MaestroModelo):
                 # con el ID remoto en vez de crear un duplicado.
                 if existente is None:
                     existente = cx.execute(
-                        f"SELECT {cls.pk}, nombre, brevete, activo, id_externo "
+                        f"SELECT {cls.pk}, nombre, dni, brevete, activo, id_externo "
                         f"FROM {cls.tabla} WHERE brevete = ?",
                         (brevete,),
                     ).fetchone()
 
                 datos = {
                     "nombre": nombre,
+                    "dni": dni,
                     "brevete": brevete,
                     "id_externo": id_externo,
                     "activo": activo,
@@ -265,6 +267,7 @@ class ConductorModel(MaestroModelo):
                 if existente:
                     cambio = (
                         existente["nombre"] != nombre
+                        or existente["dni"] != dni
                         or existente["brevete"] != brevete
                         or existente["activo"] != activo
                         or existente["id_externo"] != id_externo

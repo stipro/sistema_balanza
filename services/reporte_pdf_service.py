@@ -24,7 +24,7 @@ from pathlib import Path
 
 from reportlab.lib import colors
 
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 
 from reportlab.lib.utils import simpleSplit
 
@@ -213,6 +213,160 @@ class ReportePdfService:
 
 
     @classmethod
+    def generar_declaracion_jurada(cls, datos):
+        """Genera la DJ por proveedor siguiendo la composición del JRXML."""
+        if not isinstance(datos, dict) or not datos.get("lotes"):
+            raise ValueError("No hay lotes para generar la declaración jurada.")
+
+        salida_dir = cls._raiz_salida() / "reportes_generados"
+        salida_dir.mkdir(parents=True, exist_ok=True)
+        proveedor = cls._limpiar_nombre(datos.get("proveedor"))
+        ticket = cls._limpiar_nombre(datos.get("ticket") or "sin_ticket")
+        marca = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        salida = salida_dir / f"DJ_traslado_{ticket}_{proveedor}_{marca}.pdf"
+
+        ancho, alto = A4
+        canvas_pdf = canvas.Canvas(str(salida), pagesize=A4, pageCompression=1)
+        canvas_pdf.setTitle(f"DJ de traslado de mineral - {datos.get('proveedor', '')}")
+        canvas_pdf.setAuthor("MINERA MH S.A.C.")
+
+        def valor(clave):
+            return str(datos.get(clave) or "").strip()
+
+        def texto(x, y_superior, contenido, tam=10, negrita=False):
+            canvas_pdf.setFont("Helvetica-Bold" if negrita else "Helvetica", tam)
+            canvas_pdf.setFillColor(colors.black)
+            canvas_pdf.drawString(x, alto-y_superior-11, str(contenido or ""))
+
+        def campo(x, y, ancho_campo, alto_campo, contenido, tam=10, negrita=True):
+            """Valor centrado y línea punteada como los text fields del JRXML."""
+            contenido = str(contenido or "")
+            fuente = "Helvetica-Bold" if negrita else "Helvetica"
+            tam_ajustado = tam
+            while contenido and tam_ajustado > 6 and canvas_pdf.stringWidth(
+                contenido, fuente, tam_ajustado
+            ) > ancho_campo-4:
+                tam_ajustado -= 0.25
+            canvas_pdf.setFont(fuente, tam_ajustado)
+            canvas_pdf.drawCentredString(
+                x+ancho_campo/2, alto-y-alto_campo+4, contenido
+            )
+            canvas_pdf.saveState()
+            canvas_pdf.setStrokeColor(colors.HexColor("#808080"))
+            canvas_pdf.setLineWidth(0.5)
+            canvas_pdf.setDash(1, 1)
+            canvas_pdf.line(x, alto-y-alto_campo, x+ancho_campo, alto-y-alto_campo)
+            canvas_pdf.restoreState()
+
+        def parrafo(contenido, x, y, ancho_parrafo=460, tam=10, interlineado=16):
+            lineas = simpleSplit(contenido, "Helvetica", tam, ancho_parrafo)
+            canvas_pdf.setFont("Helvetica", tam)
+            for linea_texto in lineas:
+                canvas_pdf.drawString(x, alto-y-10, linea_texto)
+                y += interlineado
+            return y
+
+        # Título, campos y posiciones siguen la composición de dj_traslado_mineral.jrxml.
+        canvas_pdf.setFont("Helvetica-Bold", 14)
+        titulo = "DECLARACION JURADA DE TRASLADO DE MINERAL"
+        canvas_pdf.drawCentredString(ancho/2, alto-88, titulo)
+        ancho_titulo = canvas_pdf.stringWidth(titulo, "Helvetica-Bold", 14)
+        canvas_pdf.setLineWidth(0.6)
+        canvas_pdf.line((ancho-ancho_titulo)/2, alto-95,
+                        (ancho+ancho_titulo)/2, alto-95)
+
+        texto(68, 109, "Yo,")
+        campo(110, 109, 300, 16, valor("chofer"))
+        texto(412, 109, ", con Documento Nacional")
+        texto(68, 127, "de Identidad")
+        campo(151, 127, 76, 16, valor("dni_chofer"))
+        texto(230, 127, "con N° de Licencia de Conducir")
+        campo(381, 127, 70, 16, valor("brevete"))
+        texto(462, 127, ", con domicilio")
+        texto(68, 146, "en")
+        campo(94, 146, 403, 16, valor("domicilio_dni"))
+
+        texto(68, 166, "conductor del vehículo de placa")
+        campo(230, 166, 137, 16, valor("vehiculo_placas"))
+        texto(366, 166, ", en representación del transportista")
+        texto(68, 184, ",")
+        campo(87, 184, 284, 16, valor("transportista"))
+        texto(376, 184, ", DECLARO BAJO JURAMENTO")
+        texto(68, 201, "haber trasladado la cantidad de")
+        campo(230, 201, 60, 16, cls._formatear_peso(datos.get("total_tmh")))
+        texto(362, 201, "TMH de mineral aurífero sin procesar")
+        texto(68, 219, "desde la CONCESION:")
+        campo(171, 219, 128, 16, valor("concesion"), tam=9)
+        texto(304, 219, ", CODIGO")
+        campo(370, 219, 83, 16, valor("codigo_concesion"))
+        texto(461, 219, ", UBICACION:")
+        campo(68, 236, 462, 16, valor("procedencia"))
+
+        texto(68, 253,
+              ", ubicada en el Bosque JS Sector Pampa la Aguada, distrito de Chala, provincia de Caraveli,")
+        texto(68, 271, "departamento de Arequipa. El mineral es de propiedad de")
+        campo(336, 271, 178, 16, valor("proveedor"), tam=9)
+        texto(520, 271, ",")
+        texto(68, 290, "con RUC")
+        campo(126, 290, 74, 16, valor("proveedor_ruc"))
+        texto(209, 290, ". Con Guia de Remision Remitente N°")
+        campo(398, 290, 82, 16, valor("guias_proveedor"), tam=9)
+        texto(486, 290, ".")
+
+        legal_1 = (
+            "Formulo la presente Declaración para los fines pertinentes respecto al sustento de traslado "
+            "de mineral, teniendo la presente carácter de Declaración Jurada, asumiendo en caso de "
+            "comprobarse falsedad las consecuencias penales y civiles, liberando a Minera MH SAC., "
+            "de toda responsabilidad civil, penal o administrativa."
+        )
+        parrafo(legal_1, 68, 324, ancho_parrafo=462, tam=10, interlineado=16)
+        legal_2 = (
+            "Para mayor constancia y validez y en cumplimiento firmo y pongo mi huella digital al pie "
+            "del presente documento, para los fines legales correspondientes."
+        )
+        parrafo(legal_2, 68, 411, ancho_parrafo=462, tam=10, interlineado=16)
+
+        fecha = datos.get("fecha_emision")
+        if isinstance(fecha, datetime):
+            fecha_dt = fecha
+        else:
+            try:
+                fecha_dt = datetime.fromisoformat(str(fecha or "").replace("Z", "+00:00"))
+            except ValueError:
+                fecha_dt = datetime.now()
+        meses = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+                 "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+        texto(262, 460, valor("lugar") or "CHALA")
+        texto(362, 460, ";")
+        fecha_texto = valor("fecha") or (
+            f"{fecha_dt.day} de {meses[fecha_dt.month-1]} de {fecha_dt.year}"
+        )
+        campo(380, 460, 135, 16, fecha_texto, tam=10, negrita=False)
+
+        texto(68, 501, "Apellidos y Nombres:")
+        campo(179, 501, 192, 16, valor("chofer"), tam=10, negrita=False)
+        texto(68, 526, "DNI N°:")
+        campo(179, 526, 192, 16, valor("dni_chofer"), tam=10, negrita=False)
+        canvas_pdf.setStrokeColor(colors.black)
+        canvas_pdf.setLineWidth(0.75)
+        canvas_pdf.rect(428, alto-540-89, 74, 89, fill=0, stroke=1)
+        canvas_pdf.saveState()
+        canvas_pdf.setStrokeColor(colors.HexColor("#808080"))
+        canvas_pdf.setLineWidth(0.5)
+        canvas_pdf.setDash(1, 1)
+        canvas_pdf.line(156, alto-629, 276, alto-629)
+        canvas_pdf.restoreState()
+        canvas_pdf.setFont("Helvetica", 10)
+        canvas_pdf.drawCentredString(216, alto-645, "Firma")
+        canvas_pdf.setFont("Helvetica", 8)
+        canvas_pdf.drawCentredString(465, alto-643, "Huella")
+
+        canvas_pdf.save()
+        if not salida.is_file() or salida.stat().st_size < 500:
+            raise RuntimeError("No se pudo crear un PDF válido de la declaración jurada.")
+        if sys.platform.startswith("win"):
+            os.startfile(str(salida))
+        return str(salida)
 
     def _dibujar_ticket(cls, ruta, p):
 
