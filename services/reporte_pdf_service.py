@@ -368,6 +368,7 @@ class ReportePdfService:
             os.startfile(str(salida))
         return str(salida)
 
+    @classmethod
     def _dibujar_ticket(cls, ruta, p):
 
         ancho_pagina, alto_pagina = A4    # 612 x 792 puntos
